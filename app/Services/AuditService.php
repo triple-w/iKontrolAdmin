@@ -1,0 +1,4 @@
+<?php
+namespace App\Services;
+use App\Models\AdminAuditLog; use Illuminate\Database\Eloquent\Model;
+class AuditService { public function record(string $action, string $description, Model|string $entity='system', array $metadata=[]): AdminAuditLog { $type=$entity instanceof Model ? $entity::class : $entity; $id=$entity instanceof Model ? $entity->getKey() : null; return AdminAuditLog::create(['admin_user_id'=>auth()->id(),'action'=>$action,'entity_type'=>$type,'entity_id'=>$id,'description'=>$description,'ip_address'=>request()?->ip(),'metadata_json'=>$this->sanitize($metadata),'created_at'=>now()]); } private function sanitize(array $data): array { foreach ($data as $key=>$value) { if (preg_match('/password|secret|token|credential/i',(string)$key)) $data[$key]='[REDACTED]'; elseif(is_array($value)) $data[$key]=$this->sanitize($value); } return $data; } }

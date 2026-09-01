@@ -1,0 +1,7 @@
+<?php
+namespace App\Console\Commands;
+use App\Models\AdminUser; use Illuminate\Console\Command; use Illuminate\Support\Str; use Illuminate\Validation\ValidationException;
+class CreateAdminCommand extends Command {
+ protected $signature='ikontroladmin:create-admin {--name=} {--email=}'; protected $description='Crea de forma interactiva un administrador de iKontrol Admin';
+ public function handle():int{$name=trim((string)($this->option('name')?:$this->ask('Nombre')));$email=Str::lower(trim((string)($this->option('email')?:$this->ask('Email'))));try{validator(compact('name','email'),['name'=>['required','string','max:255'],'email'=>['required','email','max:255']])->validate();}catch(ValidationException $e){$this->error($e->validator->errors()->first());return self::FAILURE;}if(AdminUser::where('email',$email)->exists()){$this->error('Ya existe un administrador con ese email.');return self::FAILURE;}$password=(string)$this->secret('Contraseña (mínimo 12 caracteres)');$confirmation=(string)$this->secret('Confirmar contraseña');if(strlen($password)<12){$this->error('La contraseña debe tener al menos 12 caracteres.');return self::FAILURE;}if(!hash_equals($password,$confirmation)){$this->error('Las contraseñas no coinciden.');return self::FAILURE;}AdminUser::create(['name'=>$name,'email'=>$email,'password'=>$password,'active'=>true]);$this->info('Administrador creado correctamente.');return self::SUCCESS;}
+}

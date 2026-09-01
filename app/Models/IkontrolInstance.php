@@ -1,0 +1,4 @@
+<?php
+namespace App\Models;
+use App\Enums\InstallationStatus; use Illuminate\Database\Eloquent\Model; use Illuminate\Database\Eloquent\Relations\{BelongsTo,HasMany}; use Illuminate\Support\Str;
+class IkontrolInstance extends Model { protected $fillable=['uuid','client_id','name','slug','folder_name','absolute_path','domain','url','db_host','db_port','db_name','app_version','schema_version','installation_status','active','last_connection_at','last_connection_status','last_connection_error']; protected static function booted(): void { static::creating(fn($m)=>$m->uuid ??= (string) Str::uuid()); } protected function casts(): array { return ['installation_status'=>InstallationStatus::class,'active'=>'boolean','last_connection_at'=>'datetime']; } public function client(): BelongsTo { return $this->belongsTo(Client::class); } public function installationLogs(): HasMany { return $this->hasMany(InstanceInstallationLog::class,'instance_id')->latest('id'); } }

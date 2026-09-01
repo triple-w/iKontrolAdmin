@@ -1,0 +1,3 @@
+<?php
+namespace Tests\Unit; use App\Services\{AuditService,CpanelService,IkontrolInstanceConnectionService,InstanceFilesystemService,InstanceProvisioningService}; use Tests\TestCase;
+class InstanceProvisioningServiceTest extends TestCase { public function test_database_name_uses_central_prefix(): void {config(['ikontrol.db.prefix'=>'tws001_ik_']);$s=new InstanceProvisioningService($this->mock(CpanelService::class),app(InstanceFilesystemService::class),$this->mock(IkontrolInstanceConnectionService::class),$this->mock(AuditService::class));$this->assertSame('tws001_ik_dmarco',$s->databaseName('dmarco'));} }

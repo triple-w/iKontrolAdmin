@@ -1,0 +1,3 @@
+<?php
+namespace Tests\Unit; use App\Services\InstanceFilesystemService; use PHPUnit\Framework\Attributes\DataProvider; use Tests\TestCase;
+class InstanceFilesystemServiceTest extends TestCase { #[DataProvider('validSlugs')] public function test_valid_slug(string $slug): void{$this->assertTrue(app(InstanceFilesystemService::class)->validateSlug($slug));} public static function validSlugs(): array{return [['dmarco'],['dold_2'],['a1']];} #[DataProvider('invalidSlugs')] public function test_invalid_and_traversal_slug(string $slug): void{$this->assertFalse(app(InstanceFilesystemService::class)->validateSlug($slug));} public static function invalidSlugs(): array{return [['../x'],['/tmp'],['a\\b'],['Upper'],['with-dash'],['a..b']];} }

@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration; use Illuminate\Database\Schema\Blueprint; use Illuminate\Support\Facades\Schema;
+return new class extends Migration { public function up(): void { Schema::create('instance_installation_logs', function (Blueprint $t) { $t->id(); $t->foreignId('instance_id')->constrained('ikontrol_instances')->cascadeOnDelete(); $t->string('step',50)->index(); $t->string('status',20)->index(); $t->text('message'); $t->json('context_json')->nullable(); $t->timestamp('created_at')->useCurrent(); }); } public function down(): void { Schema::dropIfExists('instance_installation_logs'); } };
