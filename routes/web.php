@@ -17,6 +17,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances', [InstanceController::class, 'store'])->name('instances.store');
     Route::get('/instances/{instance}', [InstanceController::class, 'show'])->name('instances.show');
     Route::post('/instances/{instance}/test', [InstanceController::class, 'testConnection'])->middleware('throttle:10,1')->name('instances.test');
+    Route::post('/instances/{instance}/inspect', [InstanceController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.inspect');
     Route::get('/provisioning/new', [ProvisioningController::class, 'create'])->name('provisioning.create');
     Route::post('/provisioning/preflight', [ProvisioningController::class, 'preflight'])->name('provisioning.preflight');
     Route::post('/provisioning', [ProvisioningController::class, 'store'])->middleware('throttle:3,1')->name('provisioning.store');
