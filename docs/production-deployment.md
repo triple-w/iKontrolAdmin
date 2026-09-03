@@ -79,6 +79,16 @@ CPANEL_API_TOKEN=TOKEN_REAL
 
 No colocar estos secretos en Git, documentación, tickets o logs.
 
+## Versiones y provisioning de instalaciones
+
+El administrador no usa DOLD ni ninguna instalación existente como plantilla. Las versiones se registran en `ikontrol_versions` y la primera fuente soportada es `archive`: `source_reference` debe ser el nombre de un `.zip` ubicado dentro de `IKONTROL_VERSION_ARCHIVE_ROOT`. El ZIP debe contener `artisan` en su raíz, no debe contener symlinks ni rutas con traversal y puede verificarse con `checksum` SHA-256.
+
+Todavía falta proporcionar el dato que conecta el código real: la ubicación privada del repositorio limpio o, preferiblemente para este hosting, un archivo ZIP versionado y su checksum SHA-256. No se ha inventado una referencia ni se ha registrado DOLD como versión.
+
+Después de registrar una versión activa/default y revisar el preflight, el wizard permite un dry-run. El dry-run no crea carpeta, base, `.env`, archivos ni ejecuta Artisan. La ejecución real crea los recursos y queda en `READY_FOR_DOMAIN`; el administrador debe crear y apuntar manualmente el subdominio y usar **Confirmar dominio**. Un fallo se conserva en `instance_installation_logs`; **Reintentar** continúa desde el último paso fallido y no elimina la base ni la carpeta.
+
+No ejecutar la primera instalación hasta haber confirmado el ZIP limpio, su checksum, permisos de `IKONTROL_INSTANCES_ROOT` y la estrategia de dependencias. Esta fase no ejecuta `composer install`: el ZIP debe incluir una estrategia de dependencias aprobada (normalmente `vendor` producido fuera del hosting) o se deberá ampliar explícitamente la lista blanca cuando se decida esa política.
+
 ## 3. Inicializar Laravel
 
 ```bash
