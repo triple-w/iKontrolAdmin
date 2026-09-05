@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, InstanceController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, InstanceController, LegacyFactucareController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -25,6 +25,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/provisioning/{instance}/retry', [ProvisioningController::class, 'retry'])->middleware('throttle:3,1')->name('provisioning.retry');
     Route::post('/provisioning/{instance}/confirm-domain', [ProvisioningController::class, 'confirmDomain'])->middleware('throttle:3,1')->name('provisioning.confirm-domain');
     Route::get('/audit', AuditLogController::class)->name('audit.index');
+    Route::get('/legacy/factucare', [LegacyFactucareController::class, 'index'])->name('legacy.factucare.index');
+    Route::post('/legacy/factucare/search', [LegacyFactucareController::class, 'search'])->middleware('throttle:20,1')->name('legacy.factucare.search');
+    Route::get('/legacy/factucare/users/{user}', [LegacyFactucareController::class, 'show'])->whereNumber('user')->name('legacy.factucare.users.show');
     Route::get('/configuration', [ConfigurationController::class, 'index'])->name('configuration.index');
-    Route::post('/configuration/test/{target}', [ConfigurationController::class, 'test'])->whereIn('target', ['cpanel','mysql','filesystem'])->name('configuration.test');
+    Route::post('/configuration/test/{target}', [ConfigurationController::class, 'test'])->whereIn('target', ['cpanel','mysql','filesystem','factucare'])->name('configuration.test');
 });

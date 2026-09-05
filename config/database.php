@@ -62,6 +62,26 @@ return [
             ]) : [],
         ],
 
+        'fc2_legacy' => [
+            'driver' => 'mysql',
+            'host' => env('FC2_DB_HOST'),
+            'port' => env('FC2_DB_PORT', '3306'),
+            'database' => env('FC2_DB_DATABASE', 'tws001_factucare'),
+            'username' => env('FC2_DB_USERNAME'),
+            'password' => env('FC2_DB_PASSWORD'),
+            'unix_socket' => '',
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                PDO::ATTR_TIMEOUT => 15,
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

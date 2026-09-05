@@ -21,7 +21,7 @@ class AdminViewsSmokeTest extends TestCase
             'active' => true,
         ]);
 
-        foreach (['/', '/clients', '/clients/create', '/instances', '/instances/register', '/provisioning/new', '/audit', '/configuration'] as $uri) {
+        foreach (['/', '/clients', '/clients/create', '/instances', '/instances/register', '/provisioning/new', '/legacy/factucare', '/audit', '/configuration'] as $uri) {
             $this->actingAs($admin)->get($uri)->assertOk();
         }
     }
