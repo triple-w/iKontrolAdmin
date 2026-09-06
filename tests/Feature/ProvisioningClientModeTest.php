@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Requests\ProvisionInstanceRequest;
 use App\Models\Client;
+use App\Models\IkontrolVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 use Tests\TestCase;
@@ -39,7 +40,8 @@ class ProvisioningClientModeTest extends TestCase
     private function validator(array $clientData)
     {
         $request = new ProvisionInstanceRequest();
+        $version = IkontrolVersion::firstOrCreate(['version' => '1.0.0'], ['name' => 'Base', 'source_type' => 'archive', 'source_reference' => 'base.zip', 'active' => true]);
 
-        return Validator::make($clientData + ['name' => 'DOLD', 'slug' => 'dold'], $request->rules(), $request->messages());
+        return Validator::make($clientData + ['name' => 'DOLD', 'slug' => 'dold', 'ikontrol_version_id' => $version->id], $request->rules(), $request->messages());
     }
 }

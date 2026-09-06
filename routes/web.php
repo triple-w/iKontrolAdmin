@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, InstanceController, LegacyFactucareController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -24,10 +24,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/provisioning', [ProvisioningController::class, 'store'])->middleware('throttle:3,1')->name('provisioning.store');
     Route::post('/provisioning/{instance}/retry', [ProvisioningController::class, 'retry'])->middleware('throttle:3,1')->name('provisioning.retry');
     Route::post('/provisioning/{instance}/confirm-domain', [ProvisioningController::class, 'confirmDomain'])->middleware('throttle:3,1')->name('provisioning.confirm-domain');
+    Route::resource('versions', IkontrolVersionController::class)->except(['show', 'destroy']);
     Route::get('/audit', AuditLogController::class)->name('audit.index');
     Route::get('/legacy/factucare', [LegacyFactucareController::class, 'index'])->name('legacy.factucare.index');
     Route::post('/legacy/factucare/search', [LegacyFactucareController::class, 'search'])->middleware('throttle:20,1')->name('legacy.factucare.search');
     Route::get('/legacy/factucare/users/{user}', [LegacyFactucareController::class, 'show'])->whereNumber('user')->name('legacy.factucare.users.show');
+    Route::get('/legacy/factucare/users/{user}/conversion', [FactucareConversionController::class, 'create'])->whereNumber('user')->name('legacy.factucare.conversion.create');
+    Route::post('/legacy/factucare/users/{user}/conversion', [FactucareConversionController::class, 'store'])->whereNumber('user')->name('legacy.factucare.conversion.store');
+    Route::get('/legacy/factucare/conversion-plans/{plan}', [FactucareConversionController::class, 'show'])->name('legacy.factucare.conversion.plans.show');
+    Route::post('/legacy/factucare/conversion-plans/{plan}/regenerate', [FactucareConversionController::class, 'regenerate'])->name('legacy.factucare.conversion.plans.regenerate');
     Route::get('/configuration', [ConfigurationController::class, 'index'])->name('configuration.index');
     Route::post('/configuration/test/{target}', [ConfigurationController::class, 'test'])->whereIn('target', ['cpanel','mysql','filesystem','factucare'])->name('configuration.test');
 });

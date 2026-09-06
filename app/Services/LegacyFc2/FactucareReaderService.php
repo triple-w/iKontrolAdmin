@@ -59,6 +59,41 @@ class FactucareReaderService
         }
     }
 
+    /** Complete owner-scoped source snapshot for planning; SELECT only and no secret/CSD contents. */
+    public function conversionSource(int $userId): array
+    {
+        try {
+            $this->db = DB::connection(config('fc2.connection'));
+            $base = $this->readUser($userId, 'summary', null, 1);
+            if (! ($base['found'] ?? false)) return $base;
+            $base['clients'] = $this->allClients($userId);
+            $base['products'] = $this->allProducts($userId);
+            $base['csd'] = $this->csd($userId);
+            $base['folios'] = $this->folios($userId);
+            $base['invoices'] = $this->invoiceStats($userId);
+            $base['other'] = $this->otherCounts($userId);
+            return $base;
+        } catch (Throwable $exception) {
+            return ['found' => false, 'status' => 'ERROR', 'message' => $this->connectionStatus->safeError($exception)];
+        } finally { $this->disconnect(); }
+    }
+
+    private function allClients(int $userId): array
+    {
+        if (! $this->hasTable('clientes') || ! ($relation = $this->userRelationColumn('clientes'))) return [];
+        $map = ['id'=>['id'],'rfc'=>['rfc'],'legal_name'=>['razon_social','nombre','legal_name'],'email'=>['email','correo'],'phone'=>['telefono','phone'],'postal_code'=>['codigo_postal','cp'],'fiscal_regime'=>['regimen_fiscal','regimen_fiscal_id'],'street'=>['calle'],'exterior_number'=>['no_ext','numero_exterior','num_ext'],'interior_number'=>['no_int','numero_interior','num_int'],'neighborhood'=>['colonia'],'locality'=>['localidad'],'municipality'=>['municipio'],'state'=>['estado'],'country'=>['pais']];
+        return $this->mappedQuery('clientes', $map)->where("clientes.$relation", $userId)->orderBy('clientes.'.($this->firstColumn('clientes',['id']) ?? $relation))->get()->map(fn($row)=>(array)$row)->all();
+    }
+
+    private function allProducts(int $userId): array
+    {
+        if (! $this->hasTable('productos') || ! ($relation = $this->userRelationColumn('productos'))) return [];
+        $map = ['id'=>['id'],'code'=>['clave','codigo','sku'],'description'=>['descripcion','description','nombre'],'price'=>['precio','price'],'unit'=>['unidad'],'notes'=>['observaciones','notas'],'tax'=>['impuesto','iva','tasa_iva']];
+        $query = $this->mappedQuery('productos', $map)->where("productos.$relation", $userId);
+        $this->joinSatCatalog($query,'clave_prod_serv','clave_prod_serv_id','sat_product_code','sat_product_description');
+        $this->joinSatCatalog($query,'clave_unidad','clave_unidad_id','sat_unit_code','sat_unit_description');
+        return $query->orderBy('productos.'.($this->firstColumn('productos',['id']) ?? $relation))->get()->map(fn($row)=>(array)$row)->all();
+    }
     private function readUser(int $userId, string $section, ?string $search, int $page, ?string $knownRfc = null): array
     {
         if (! $this->hasTable('users') || ! $this->hasColumn('users', 'id')) {

@@ -43,8 +43,9 @@ class InstanceProvisioningServiceTest extends TestCase
         $connection->shouldReceive('testGlobalConnection')->once()->andReturn(['success' => true, 'status' => 'CONNECTED']);
         $service = new InstanceProvisioningService($cpanel, $filesystem, $connection, $this->mock(AuditService::class));
 
-        $result = $service->preflight('dmarco');
+        $result = $service->dryRun('dmarco');
 
+        $this->assertTrue($result['dry_run']);
         $this->assertTrue($result['success']);
         $this->assertSame([
             'slug_valid', 'folder_available', 'filesystem_writable', 'cpanel_connected',

@@ -27,14 +27,29 @@ class ArchiveVersionSource implements VersionSource
         if ($zip->open($archive) !== true) {
             throw new RuntimeException('No fue posible abrir el archivo de la versión.');
         }
+        $entries = [];
         for ($index = 0; $index < $zip->numFiles; $index++) {
             $entry = $zip->getNameIndex($index);
             $normalized = str_replace('\\', '/', $entry);
+            $entries[] = rtrim($normalized, '/');
             $zip->getExternalAttributesIndex($index, $opsys, $attributes);
             $isSymlink = $opsys === ZipArchive::OPSYS_UNIX && (($attributes >> 16) & 0170000) === 0120000;
             if ($normalized === '' || $isSymlink || str_contains($normalized, '../') || str_starts_with($normalized, '/') || str_contains($normalized, ':')) {
                 $zip->close();
                 throw new RuntimeException('El archivo contiene una ruta insegura.');
+            }
+        }
+        foreach (['artisan', 'public/index.php', 'vendor/autoload.php'] as $required) {
+            if (! in_array($required, $entries, true)) {
+                $zip->close();
+                throw new RuntimeException('El artefacto no contiene todos los archivos requeridos para producción.');
+            }
+        }
+        foreach (File::allFiles($destination) as $existing) {
+            $relative = str_replace('\\', '/', $existing->getRelativePathname());
+            if ($relative !== '.ikontrol-deployment.json' && ! in_array($relative, $entries, true)) {
+                $zip->close();
+                throw new RuntimeException('La carpeta contiene archivos ajenos al artefacto seleccionado.');
             }
         }
         if (! $zip->extractTo($destination)) {

@@ -59,8 +59,10 @@ class InstanceProvisioningService
 
     public function confirmDomain(IkontrolInstance $instance): IkontrolInstance
     {
-        $url = $instance->url ?: 'https://'.$instance->slug.'.ikontrol.solutions';
-        $response = \Illuminate\Support\Facades\Http::timeout(15)->get($url);
+        if ($instance->installation_status !== S::ReadyForDomain) throw new RuntimeException('La instalación aún no está preparada para confirmar dominio.');
+        $url = 'https://'.$instance->slug.'.ikontrol.solutions';
+        if ($instance->url && $instance->url !== $url) throw new RuntimeException('La URL de la instalación no coincide con el dominio esperado.');
+        $response = \Illuminate\Support\Facades\Http::withoutRedirecting()->timeout(15)->get($url);
         if (! $response->successful()) throw new RuntimeException('El dominio no respondió correctamente.');
         $instance->update(['url' => $url, 'installation_status' => S::Ready]);
         $this->log($instance, S::Ready, 'SUCCESS', 'Dominio confirmado y aplicación accesible.');
@@ -93,10 +95,11 @@ class InstanceProvisioningService
             [S::AssigningDatabaseUser, fn () => $this->cpanel->assignUserToDatabase($instance->db_name)],
             [S::DeployingCode, fn () => $deployment->deployCode($instance, $version)],
             [S::CreatingEnv, fn () => $deployment->createEnvironment($instance)],
+            [S::InstallingDependencies, fn () => $deployment->verifyDependencies($instance)],
             [S::GeneratingKey, fn () => $this->command($deployment, $instance, 'key:generate', ['--force'])],
             [S::RunningMigrations, fn () => $this->command($deployment, $instance, 'migrate', ['--force'])],
             [S::Optimizing, fn () => $this->optimize($deployment, $instance)],
-            [S::TestingConnection, fn () => throw_if(! $this->connection->test($instance)['success'], new RuntimeException('La conexión de la instalación falló.'))],
+            [S::TestingConnection, function () use ($deployment, $instance) { throw_if(! $this->connection->test($instance)['success'], new RuntimeException('La conexión de la instalación falló.')); $this->command($deployment, $instance, 'about', ['--only=environment,cache,drivers']); }],
         ];
     }
 
@@ -118,13 +121,16 @@ class InstanceProvisioningService
 
     private function log(IkontrolInstance $instance, S|string $step, string $status, string $message): void
     {
+        foreach ([(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')] as $secret) if ($secret !== '') $message = str_replace($secret, '[REDACTED]', $message);
         $message = preg_replace('/(password|token|secret)\s*[=:]\s*[^\s]+/i', '$1=[REDACTED]', $message);
         InstanceInstallationLog::create(['instance_id' => $instance->id, 'step' => $step instanceof S ? $step->value : $step, 'status' => $status, 'message' => mb_substr($message, 0, 2000), 'created_at' => now()]);
     }
 
     private function safeMessage(Throwable $exception): string
     {
-        $message = preg_replace('/(password|token|secret)\s*[=:]\s*[^\s]+/i', '$1=[REDACTED]', $exception->getMessage());
+        $message = $exception->getMessage();
+        foreach ([(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')] as $secret) if ($secret !== '') $message = str_replace($secret, '[REDACTED]', $message);
+        $message = preg_replace('/(password|token|secret)\s*[=:]\s*[^\s]+/i', '$1=[REDACTED]', $message);
         return mb_substr($message ?: 'Falló el provisioning.', 0, 500);
     }
 }
