@@ -13,6 +13,15 @@ return [
     'version_sources' => [
         'archive_root' => env('IKONTROL_VERSION_ARCHIVE_ROOT', storage_path('ikontrol-versions')),
     ],
+    'templates' => [
+        'root' => env('IKONTROL_TEMPLATE_ROOT', storage_path('ikontrol-templates')),
+        'mysql_binary' => env('IKONTROL_MYSQL_BINARY', 'mysql'),
+        'table_classification' => [
+            'structure_only' => [],
+            'keep_data' => [],
+            'empty_data' => [],
+        ],
+    ],
     'deployment' => [
         'command_timeout' => (int) env('IKONTROL_DEPLOYMENT_TIMEOUT', 300),
     ],

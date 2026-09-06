@@ -2,13 +2,43 @@
 
 namespace App\Services;
 
-use App\Models\{IkontrolInstance, IkontrolVersion};
+use App\Models\{IkontrolInstance, IkontrolTemplate, IkontrolVersion};
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
 class IkontrolDeploymentService
 {
-    public function __construct(private VersionSourceManager $sources, private AllowedArtisanRunner $artisan) {}
+    public function __construct(private VersionSourceManager $sources, private AllowedArtisanRunner $artisan, private ?IkontrolTemplateValidationService $templates = null) {}
+
+    public function deployTemplate(IkontrolInstance $instance, IkontrolTemplate $template): void
+    {
+        $path = $this->safeInstancePath($instance);
+        $marker = $path.DIRECTORY_SEPARATOR.'.ikontrol-template.json';
+        if ($instance->ikontrol_template_id !== $template->id) throw new RuntimeException('La plantilla no corresponde a la instalación.');
+        if (File::exists($marker)) {
+            $metadata = json_decode((string) File::get($marker), true);
+            if (($metadata['template_id'] ?? null) !== $template->id || ($metadata['archive_sha256'] ?? null) !== $template->archive_sha256) {
+                throw new RuntimeException('La carpeta contiene otra plantilla iKontrol.');
+            }
+            if (($metadata['status'] ?? null) === 'READY' && is_file($path.DIRECTORY_SEPARATOR.'artisan')) return;
+        } elseif (File::exists($path) && count(File::allFiles($path)) > 0) {
+            throw new RuntimeException('La carpeta de la instalación ya está ocupada.');
+        }
+        $validated = ($this->templates ?? app(IkontrolTemplateValidationService::class))->validate($template);
+        File::ensureDirectoryExists($path, 0750);
+        File::put($marker, json_encode(['template_id' => $template->id, 'archive_sha256' => $template->archive_sha256, 'status' => 'DEPLOYING'], JSON_THROW_ON_ERROR));
+        $zip = new \ZipArchive();
+        if ($zip->open($validated['archive']) !== true || ! $zip->extractTo($path)) throw new RuntimeException('No fue posible extraer la plantilla.');
+        $zip->close();
+        if (! is_file($path.DIRECTORY_SEPARATOR.'artisan') || ! is_file($path.DIRECTORY_SEPARATOR.'public'.DIRECTORY_SEPARATOR.'index.php')) {
+            throw new RuntimeException('La plantilla no contiene una aplicación iKontrol válida.');
+        }
+        foreach (['storage', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs', 'bootstrap/cache'] as $directory) {
+            File::ensureDirectoryExists($path.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $directory), 0775);
+        }
+        $this->verifyDependencies($instance);
+        File::put($marker, json_encode(['template_id' => $template->id, 'archive_sha256' => $template->archive_sha256, 'status' => 'READY'], JSON_THROW_ON_ERROR));
+    }
 
     public function deployCode(IkontrolInstance $instance, IkontrolVersion $version): void
     {

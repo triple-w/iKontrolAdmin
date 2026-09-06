@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolTemplateController, IkontrolVersionController, InstanceController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/provisioning/{instance}/retry', [ProvisioningController::class, 'retry'])->middleware('throttle:3,1')->name('provisioning.retry');
     Route::post('/provisioning/{instance}/confirm-domain', [ProvisioningController::class, 'confirmDomain'])->middleware('throttle:3,1')->name('provisioning.confirm-domain');
     Route::resource('versions', IkontrolVersionController::class)->except(['show', 'destroy']);
+    Route::resource('templates', IkontrolTemplateController::class)->except(['show', 'destroy']);
     Route::get('/audit', AuditLogController::class)->name('audit.index');
     Route::get('/legacy/factucare', [LegacyFactucareController::class, 'index'])->name('legacy.factucare.index');
     Route::post('/legacy/factucare/search', [LegacyFactucareController::class, 'search'])->middleware('throttle:20,1')->name('legacy.factucare.search');

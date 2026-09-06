@@ -4,26 +4,26 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProvisionInstanceRequest;
-use App\Models\{Client, IkontrolInstance, IkontrolVersion};
+use App\Models\{Client, IkontrolInstance, IkontrolTemplate, IkontrolVersion};
 use App\Services\InstanceProvisioningService;
 
 class ProvisioningController extends Controller
 {
     public function create()
     {
-        return view('admin.provisioning.create', ['clients' => Client::whereActive(true)->orderBy('name')->get(), 'versions' => IkontrolVersion::where('active', true)->orderByDesc('is_default')->orderByDesc('id')->get()]);
+        return view('admin.provisioning.create', ['clients' => Client::whereActive(true)->orderBy('name')->get(), 'templates' => IkontrolTemplate::where('active', true)->orderByDesc('is_default')->orderByDesc('id')->get()]);
     }
 
     public function preflight(ProvisionInstanceRequest $request, InstanceProvisioningService $service)
     {
         $data = $request->validated();
-        return response()->json($service->preflight($data['slug'], IkontrolVersion::find($data['ikontrol_version_id'] ?? null)));
+        return response()->json($service->preflight($data['slug'], IkontrolTemplate::find($data['ikontrol_template_id'] ?? null) ?? IkontrolVersion::find($data['ikontrol_version_id'] ?? null)));
     }
 
     public function dryRun(ProvisionInstanceRequest $request, InstanceProvisioningService $service)
     {
         $data = $request->validated();
-        return response()->json($service->dryRun($data['slug'], IkontrolVersion::find($data['ikontrol_version_id'] ?? null)));
+        return response()->json($service->dryRun($data['slug'], IkontrolTemplate::find($data['ikontrol_template_id'] ?? null) ?? IkontrolVersion::find($data['ikontrol_version_id'] ?? null)));
     }
 
     public function store(ProvisionInstanceRequest $request, InstanceProvisioningService $service)
