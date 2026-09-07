@@ -60,16 +60,21 @@ class IkontrolTemplateValidationService
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $entry = str_replace('\\', '/', (string) $zip->getNameIndex($i));
                 $trimmed = rtrim($entry, '/');
+                $normalized = strtolower($trimmed);
+                $isDirectory = str_ends_with($entry, '/');
                 $files[] = $trimmed;
                 $zip->getExternalAttributesIndex($i, $opsys, $attributes);
                 $symlink = $opsys === ZipArchive::OPSYS_UNIX && (($attributes >> 16) & 0170000) === 0120000;
-                $segments = explode('/', strtolower($trimmed));
-                if ($entry === '' || $symlink || str_contains($entry, '../') || str_starts_with($entry, '/') || str_contains($entry, ':')) {
+                $segments = explode('/', $normalized);
+                if ($entry === '' || $symlink || str_contains($entry, '../') || str_contains($entry, '/./') || str_contains($entry, '//') || str_starts_with($entry, '/') || str_contains($entry, ':') || preg_match('/[\x00-\x1F]/', $entry)) {
                     throw new RuntimeException('El ZIP contiene una ruta o symlink peligroso.');
                 }
                 $sensitiveCertificate = (bool) preg_match('/\.(?:cer|key|pfx|p12|pem)$/i', $trimmed);
+                $insideWritableLogs = $normalized === 'writable/logs' || str_starts_with($normalized, 'writable/logs/');
+                $safeLogPlaceholder = $isDirectory || in_array(basename($normalized), ['index.html', '.gitkeep', '.gitignore'], true);
+                $insideWritableBackups = $normalized === 'writable/backups' || str_starts_with($normalized, 'writable/backups/');
                 if (in_array('.env', $segments, true) || in_array('.git', $segments, true) || in_array('node_modules', $segments, true)
-                    || in_array('writable', $segments, true) || in_array('backups', $segments, true) || in_array('logs', $segments, true)
+                    || $insideWritableBackups || in_array('backups', $segments, true) || ($insideWritableLogs && ! $safeLogPlaceholder)
                     || $sensitiveCertificate) {
                     throw new RuntimeException('El ZIP contiene archivos o directorios excluidos.');
                 }
