@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProvisionInstanceRequest;
 use App\Models\{Client, IkontrolInstance, IkontrolTemplate, IkontrolVersion};
-use App\Services\InstanceProvisioningService;
+use App\Services\{IkontrolTemplateValidationService, InstanceProvisioningService};
 
 class ProvisioningController extends Controller
 {
-    public function create()
+    public function create(IkontrolTemplateValidationService $validator)
     {
-        return view('admin.provisioning.create', ['clients' => Client::whereActive(true)->orderBy('name')->get(), 'templates' => IkontrolTemplate::where('active', true)->orderByDesc('is_default')->orderByDesc('id')->get()]);
+        $templates = IkontrolTemplate::where('active', true)->orderByDesc('is_default')->orderByDesc('id')->get()->filter(function (IkontrolTemplate $template) use ($validator) {
+            try { $validator->validate($template); return true; } catch (\Throwable) { return false; }
+        });
+        return view('admin.provisioning.create', ['clients' => Client::whereActive(true)->orderBy('name')->get(), 'templates' => $templates]);
     }
 
     public function preflight(ProvisionInstanceRequest $request, InstanceProvisioningService $service)

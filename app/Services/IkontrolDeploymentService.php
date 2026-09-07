@@ -8,7 +8,7 @@ use RuntimeException;
 
 class IkontrolDeploymentService
 {
-    public function __construct(private VersionSourceManager $sources, private AllowedArtisanRunner $artisan, private ?IkontrolTemplateValidationService $templates = null) {}
+    public function __construct(private VersionSourceManager $sources, private AllowedArtisanRunner $artisan, private ?IkontrolTemplateValidationService $templates = null, private ?AllowedSparkRunner $spark = null) {}
 
     public function deployTemplate(IkontrolInstance $instance, IkontrolTemplate $template): void
     {
@@ -30,13 +30,12 @@ class IkontrolDeploymentService
         $zip = new \ZipArchive();
         if ($zip->open($validated['archive']) !== true || ! $zip->extractTo($path)) throw new RuntimeException('No fue posible extraer la plantilla.');
         $zip->close();
-        if (! is_file($path.DIRECTORY_SEPARATOR.'artisan') || ! is_file($path.DIRECTORY_SEPARATOR.'public'.DIRECTORY_SEPARATOR.'index.php')) {
+        if (! is_file($path.DIRECTORY_SEPARATOR.'index.php') || ! is_file($path.DIRECTORY_SEPARATOR.'spark') || ! is_dir($path.DIRECTORY_SEPARATOR.'app') || ! is_dir($path.DIRECTORY_SEPARATOR.'system')) {
             throw new RuntimeException('La plantilla no contiene una aplicación iKontrol válida.');
         }
-        foreach (['storage', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs', 'bootstrap/cache'] as $directory) {
+        foreach (['writable', 'writable/cache', 'writable/logs', 'writable/session', 'writable/uploads'] as $directory) {
             File::ensureDirectoryExists($path.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $directory), 0775);
         }
-        $this->verifyDependencies($instance);
         File::put($marker, json_encode(['template_id' => $template->id, 'archive_sha256' => $template->archive_sha256, 'status' => 'READY'], JSON_THROW_ON_ERROR));
     }
 
@@ -136,6 +135,11 @@ class IkontrolDeploymentService
             throw new RuntimeException('La carpeta de la instalación no puede ser un symlink.');
         }
         return $path;
+    }
+
+    public function runTemplateCommand(IkontrolInstance $instance, string $command, array $arguments = []): array
+    {
+        return ($this->spark ?? app(AllowedSparkRunner::class))->run($this->safeInstancePath($instance), $command, $arguments);
     }
 
     private function envValue(mixed $value): string

@@ -25,7 +25,8 @@ class BuildIkontrolTemplateCommand extends Command
             try {
                 $stage = $temporary.DIRECTORY_SEPARATOR.'source'; File::ensureDirectoryExists($stage, 0700);
                 $this->stageSource($source, $stage);
-                foreach (['artisan', 'public/index.php', 'composer.json', 'vendor/autoload.php'] as $required) if (! is_file($stage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $required))) throw new RuntimeException("La fuente no contiene {$required}.");
+                foreach (['index.php', 'spark', '.env.example'] as $required) if (! is_file($stage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $required))) throw new RuntimeException("La fuente no contiene {$required}.");
+                foreach (['app', 'system'] as $required) if (! is_dir($stage.DIRECTORY_SEPARATOR.$required)) throw new RuntimeException("La fuente no contiene {$required}/.");
                 File::ensureDirectoryExists($target, 0750);
                 $zipPath = $target.DIRECTORY_SEPARATOR."ikontrol-{$version}.zip";
                 $this->zip($stage, $zipPath);
@@ -60,11 +61,11 @@ class BuildIkontrolTemplateCommand extends Command
 
     private function stageSource(string $source, string $stage): void
     {
-        $excluded = ['.env', '.git', 'node_modules', 'storage/logs', 'storage/framework/cache', 'storage/framework/sessions', 'storage/framework/views', 'public/uploads'];
+        $excluded = ['.env', '.git', 'node_modules', 'writable', 'backups', 'logs', 'storage/logs', 'storage/framework/cache', 'storage/framework/sessions', 'storage/framework/views', 'public/uploads'];
         foreach (File::allFiles($source) as $file) {
             $relative = str_replace('\\', '/', $file->getRelativePathname());
             $segments = explode('/', strtolower($relative));
-            if ($file->isLink() || in_array('.env', $segments, true) || in_array('.git', $segments, true) || in_array('node_modules', $segments, true) || collect($excluded)->contains(fn ($path) => $relative === $path || str_starts_with($relative, $path.'/'))) continue;
+            if ($file->isLink() || preg_match('/\.(?:cer|key|pfx|p12|pem)$/i', $relative) || in_array('.env', $segments, true) || in_array('.git', $segments, true) || in_array('node_modules', $segments, true) || collect($excluded)->contains(fn ($path) => $relative === $path || str_starts_with($relative, $path.'/'))) continue;
             $destination = $stage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative); File::ensureDirectoryExists(dirname($destination), 0700); File::copy($file->getPathname(), $destination);
         }
     }

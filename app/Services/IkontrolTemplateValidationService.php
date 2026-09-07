@@ -67,12 +67,18 @@ class IkontrolTemplateValidationService
                 if ($entry === '' || $symlink || str_contains($entry, '../') || str_starts_with($entry, '/') || str_contains($entry, ':')) {
                     throw new RuntimeException('El ZIP contiene una ruta o symlink peligroso.');
                 }
-                if (in_array('.env', $segments, true) || in_array('.git', $segments, true) || in_array('node_modules', $segments, true)) {
+                $sensitiveCertificate = (bool) preg_match('/\.(?:cer|key|pfx|p12|pem)$/i', $trimmed);
+                if (in_array('.env', $segments, true) || in_array('.git', $segments, true) || in_array('node_modules', $segments, true)
+                    || in_array('writable', $segments, true) || in_array('backups', $segments, true) || in_array('logs', $segments, true)
+                    || $sensitiveCertificate) {
                     throw new RuntimeException('El ZIP contiene archivos o directorios excluidos.');
                 }
             }
-            foreach (['artisan', 'public/index.php', 'composer.json', 'vendor/autoload.php'] as $required) {
+            foreach (['index.php', 'spark', '.env.example'] as $required) {
                 if (! in_array($required, $files, true)) throw new RuntimeException("El ZIP no contiene {$required}.");
+            }
+            foreach (['app/', 'system/'] as $requiredDirectory) {
+                if (! collect($files)->contains(fn ($entry) => str_starts_with($entry.'/', $requiredDirectory))) throw new RuntimeException("El ZIP no contiene {$requiredDirectory}.");
             }
         } finally {
             $zip->close();

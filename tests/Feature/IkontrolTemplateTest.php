@@ -61,6 +61,20 @@ class IkontrolTemplateTest extends TestCase
         app(IkontrolTemplateValidationService::class)->validate($template);
     }
 
+    public function test_zip_with_runtime_data_or_real_csd_is_rejected(): void
+    {
+        foreach (['writable/logs/app.log'=>'log', 'backups/customer.sql'=>'secret', 'app/Certificates/real.key'=>'private'] as $path=>$contents) {
+            $template = $this->template([$path=>$contents]);
+            try { app(IkontrolTemplateValidationService::class)->validate($template); $this->fail("{$path} debió rechazarse"); } catch (RuntimeException) { $this->assertTrue(true); }
+        }
+    }
+
+    public function test_invalid_database_checksum_is_rejected(): void
+    {
+        $template = $this->template(); $template->database_sha256 = str_repeat('0',64);
+        $this->expectException(RuntimeException::class); app(IkontrolTemplateValidationService::class)->validate($template);
+    }
+
     public function test_missing_sql_is_rejected(): void
     {
         $template = $this->template();
@@ -82,7 +96,7 @@ class IkontrolTemplateTest extends TestCase
         $archive = $this->root.'/1.0.0/ikontrol-1.0.0.zip';
         $sql = $this->root.'/1.0.0/ikontrol-1.0.0.sql';
         $zip = new ZipArchive(); $zip->open($archive, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-        foreach (['artisan' => '#!/usr/bin/env php', 'public/index.php' => '<?php', 'composer.json' => '{}', 'vendor/autoload.php' => '<?php'] + $extraEntries as $name => $contents) $zip->addFromString($name, $contents);
+        foreach (['index.php' => '<?php', 'spark' => '#!/usr/bin/env php', '.env.example' => 'CI_ENVIRONMENT = production', 'app/Config/App.php' => '<?php', 'system/CodeIgniter.php' => '<?php'] + $extraEntries as $name => $contents) $zip->addFromString($name, $contents);
         $zip->close(); File::put($sql, 'CREATE TABLE example (id INT);');
         return new IkontrolTemplate(['version' => '1.0.0', 'name' => 'Base', 'app_version' => '1.0.0', 'schema_version' => '1', 'archive_path' => '1.0.0/ikontrol-1.0.0.zip', 'database_dump_path' => '1.0.0/ikontrol-1.0.0.sql', 'archive_sha256' => hash_file('sha256', $archive), 'database_sha256' => hash_file('sha256', $sql), 'active' => true]);
     }

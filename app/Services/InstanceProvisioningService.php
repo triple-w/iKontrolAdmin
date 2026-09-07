@@ -145,8 +145,8 @@ class InstanceProvisioningService
             [S::DeployingFiles, fn () => $deployment->deployTemplate($instance, $template)],
             [S::ImportingDatabaseTemplate, fn () => $database->import($instance, $template)],
             [S::CreatingEnv, fn () => $deployment->createEnvironment($instance)],
-            [S::GeneratingAppKey, fn () => $this->command($deployment, $instance, 'key:generate', ['--force'])],
-            [S::Optimizing, fn () => $this->optimize($deployment, $instance)],
+            [S::GeneratingAppKey, fn () => $this->templateCommand($deployment, $instance, 'key:generate', ['--force'])],
+            [S::Optimizing, fn () => $this->templateCommand($deployment, $instance, 'cache:clear', [])],
             [S::TestingConnection, fn () => throw_if(! $this->connection->test($instance)['success'], new RuntimeException('La conexión de la instalación falló.'))],
         ];
     }
@@ -162,6 +162,12 @@ class InstanceProvisioningService
     {
         $result = $deployment->run($instance, $command, $arguments);
         if (($result['exit_code'] ?? 1) !== 0) throw new RuntimeException('Artisan falló: '.$result['output']);
+    }
+
+    private function templateCommand(IkontrolDeploymentService $deployment, IkontrolInstance $instance, string $command, array $arguments): void
+    {
+        $result = $deployment->runTemplateCommand($instance, $command, $arguments);
+        if (($result['exit_code'] ?? 1) !== 0) throw new RuntimeException('Spark falló: '.$result['output']);
     }
 
     private function optimize(IkontrolDeploymentService $deployment, IkontrolInstance $instance): void
