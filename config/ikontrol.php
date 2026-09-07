@@ -7,6 +7,7 @@ return [
         'username' => env('IKONTROL_DB_USERNAME'),
         'password' => env('IKONTROL_DB_PASSWORD'),
         'prefix' => env('IKONTROL_DB_PREFIX', 'tws001_ik_'),
+        'table_prefix' => env('IKONTROL_DB_TABLE_PREFIX', 'ikontrol_'),
     ],
     'instances_root' => env('IKONTROL_INSTANCES_ROOT', '/home/tws001'),
     'folder_suffix' => env('IKONTROL_FOLDER_SUFFIX', '.ikontrol.solutions'),

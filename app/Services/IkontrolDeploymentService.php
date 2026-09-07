@@ -99,6 +99,43 @@ class IkontrolDeploymentService
         @chmod($target, 0600);
     }
 
+    public function createTemplateEnvironment(IkontrolInstance $instance): array
+    {
+        if (! $instance->template) throw new RuntimeException('La instalación no pertenece a una plantilla iKontrol.');
+        $path = $this->safeInstancePath($instance); $target = $path.DIRECTORY_SEPARATOR.'.env';
+        $existing = File::exists($target) ? (string) File::get($target) : '';
+        $encryptionKey = null;
+        if (preg_match('/^\s*encryption\.key\s*=\s*(.+?)\s*$/mi', $existing, $match) && trim($match[1], " \t\n\r\0\x0B'\"") !== '') $encryptionKey = trim($match[1]);
+        $baseUrl = 'https://'.$instance->slug.'.ikontrol.solutions/';
+        $lines = [
+            'CI_ENVIRONMENT = production', '',
+            'app.baseURL = '.$this->ciEnvValue($baseUrl), '',
+            'database.default.hostname = '.$this->ciEnvValue(config('ikontrol.db.host')),
+            'database.default.database = '.$this->ciEnvValue($instance->db_name),
+            'database.default.username = '.$this->ciEnvValue(config('ikontrol.db.username')),
+            'database.default.password = '.$this->ciEnvValue(config('ikontrol.db.password')),
+            'database.default.DBDriver = MySQLi',
+            'database.default.DBPrefix = '.$this->ciEnvValue(config('ikontrol.db.table_prefix', 'ikontrol_')),
+            'database.default.port = '.(int) config('ikontrol.db.port'),
+        ];
+        if ($encryptionKey !== null) $lines = array_merge($lines, ['', 'encryption.key = '.$encryptionKey]);
+        File::replace($target, implode(PHP_EOL, $lines).PHP_EOL); @chmod($target, 0600);
+        $this->installDatabaseCheckCommand($path);
+        return ['encryption_key_present' => $encryptionKey !== null, 'document_root' => $path];
+    }
+
+    public function templateHasEncryptionKey(IkontrolInstance $instance): bool
+    {
+        $target = $this->safeInstancePath($instance).DIRECTORY_SEPARATOR.'.env';
+        if (! File::exists($target)) return false;
+        return preg_match('/^\s*encryption\.key\s*=\s*([^\s#]+)\s*$/mi', (string) File::get($target), $match) === 1 && trim($match[1], "'\"") !== '';
+    }
+
+    public function templateDocumentRoot(IkontrolInstance $instance): string
+    {
+        return $this->safeInstancePath($instance);
+    }
+
     public function verifyDependencies(IkontrolInstance $instance): void
     {
         $path = $this->safeInstancePath($instance);
@@ -146,6 +183,45 @@ class IkontrolDeploymentService
     {
         $value = str_replace(["\\", '"', '$', "\r", "\n"], ['\\\\', '\\"', '\\$', '', ''], (string) $value);
         return '"'.$value.'"';
+    }
+
+    private function ciEnvValue(mixed $value): string
+    {
+        return "'".str_replace(["\\", "'", "\r", "\n"], ['\\\\', "\\'", '', ''], (string) $value)."'";
+    }
+
+    private function installDatabaseCheckCommand(string $path): void
+    {
+        $target = $path.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Commands'.DIRECTORY_SEPARATOR.'IkontrolDatabaseCheck.php';
+        File::ensureDirectoryExists(dirname($target), 0750);
+        File::put($target, <<<'PHP'
+<?php
+
+namespace App\Commands;
+
+use CodeIgniter\CLI\BaseCommand;
+use CodeIgniter\CLI\CLI;
+
+class IkontrolDatabaseCheck extends BaseCommand
+{
+    protected $group = 'iKontrol';
+    protected $name = 'ikontrol:database-check';
+    protected $description = 'Verifica la conexión configurada mediante una consulta de solo lectura.';
+
+    public function run(array $params)
+    {
+        try {
+            $database = \Config\Database::connect();
+            $database->query('SELECT 1')->getRow();
+            CLI::write('CONNECTED', 'green');
+        } catch (\Throwable) {
+            CLI::error('ERROR');
+            throw new \RuntimeException('No fue posible conectar con la base configurada.');
+        }
+    }
+}
+PHP);
+        @chmod($target, 0640);
     }
 
     private function normalizePath(string $path): string

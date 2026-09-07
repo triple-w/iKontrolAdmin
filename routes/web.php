@@ -24,6 +24,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/provisioning', [ProvisioningController::class, 'store'])->middleware('throttle:3,1')->name('provisioning.store');
     Route::post('/provisioning/{instance}/retry', [ProvisioningController::class, 'retry'])->middleware('throttle:3,1')->name('provisioning.retry');
     Route::post('/provisioning/{instance}/confirm-domain', [ProvisioningController::class, 'confirmDomain'])->middleware('throttle:3,1')->name('provisioning.confirm-domain');
+    Route::post('/provisioning/{instance}/regenerate-configuration', [ProvisioningController::class, 'regenerateConfiguration'])->middleware('throttle:3,1')->name('provisioning.regenerate-configuration');
     Route::get('/versions', [IkontrolVersionController::class, 'index'])->name('versions.index');
     Route::get('/versions/create', [IkontrolVersionController::class, 'create'])->name('versions.create');
     Route::post('/versions', [IkontrolVersionController::class, 'store'])->name('versions.store');

@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 
 class AllowedSparkRunner
 {
-    private const COMMANDS = ['key:generate' => ['--force'], 'cache:clear' => []];
+    private const COMMANDS = ['key:generate' => ['--force'], 'cache:clear' => [], 'ikontrol:database-check' => []];
 
     public function run(string $path, string $command, array $arguments = []): array
     {

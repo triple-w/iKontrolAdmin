@@ -43,7 +43,13 @@ class ProvisioningController extends Controller
 
     public function confirmDomain(IkontrolInstance $instance, InstanceProvisioningService $service)
     {
-        $service->confirmDomain($instance);
-        return back()->with('success', 'Dominio confirmado.');
+        try { $service->confirmDomain($instance); return back()->with('success', 'Dominio confirmado.'); }
+        catch (\Throwable $e) { return back()->with('error', $e->getMessage()); }
+    }
+
+    public function regenerateConfiguration(IkontrolInstance $instance, InstanceProvisioningService $service)
+    {
+        try { $service->regenerateTemplateConfiguration($instance); return back()->with('success', 'Configuración CodeIgniter regenerada y conexión verificada.'); }
+        catch (\Throwable $e) { return back()->with('error', $e->getMessage()); }
     }
 }

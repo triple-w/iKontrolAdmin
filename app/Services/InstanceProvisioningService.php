@@ -7,6 +7,8 @@ use App\Models\{Client, IkontrolInstance, IkontrolTemplate, IkontrolVersion, Ins
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 
 class InstanceProvisioningService
 {
@@ -22,7 +24,8 @@ class InstanceProvisioningService
 
     public function preview(string $slug, IkontrolVersion|IkontrolTemplate|null $source = null): array
     {
-        return ['folder_name' => $this->fs->folderName($slug), 'absolute_path' => $this->fs->path($slug), 'db_name' => $this->databaseName($slug), 'domain' => 'https://'.$slug.'.ikontrol.solutions', 'version' => $source?->version, 'app_version' => $source instanceof IkontrolTemplate ? $source->app_version : null, 'schema_version' => $source instanceof IkontrolTemplate ? $source->schema_version : null];
+        $path = $this->fs->path($slug);
+        return ['folder_name' => $this->fs->folderName($slug), 'absolute_path' => $path, 'document_root' => $source instanceof IkontrolTemplate ? $path : $path.DIRECTORY_SEPARATOR.'public', 'db_name' => $this->databaseName($slug), 'domain' => 'https://'.$slug.'.ikontrol.solutions', 'version' => $source?->version, 'app_version' => $source instanceof IkontrolTemplate ? $source->app_version : null, 'schema_version' => $source instanceof IkontrolTemplate ? $source->schema_version : null];
     }
 
     public function preflight(string $slug, IkontrolVersion|IkontrolTemplate|null $source = null): array
@@ -69,11 +72,24 @@ class InstanceProvisioningService
         if ($instance->installation_status !== S::ReadyForDomain) throw new RuntimeException('La instalación aún no está preparada para confirmar dominio.');
         $url = 'https://'.$instance->slug.'.ikontrol.solutions';
         if ($instance->url && $instance->url !== $url) throw new RuntimeException('La URL de la instalación no coincide con el dominio esperado.');
-        $response = \Illuminate\Support\Facades\Http::withoutRedirecting()->timeout(15)->get($url);
-        if (! $response->successful()) throw new RuntimeException('El dominio no respondió correctamente.');
-        $instance->update(['url' => $url, 'installation_status' => S::Ready]);
-        $this->log($instance, S::Ready, 'SUCCESS', 'Dominio confirmado y aplicación accesible.');
-        return $instance->fresh();
+        try {
+            $response = Http::timeout(15)->connectTimeout(8)->withOptions(['allow_redirects'=>['max'=>5]])->get($url);
+            if ($response->status() !== 200) {
+                $message = $response->status() === 404 ? 'El dominio responde, pero la aplicación devolvió HTTP 404.' : ($response->serverError() ? 'El dominio responde, pero iKontrol devolvió HTTP '.$response->status().'.' : 'El dominio respondió HTTP '.$response->status().'.');
+                $this->log($instance, 'CONFIRMING_DOMAIN', 'FAILED', $message); throw new RuntimeException($message);
+            }
+            $instance->update(['url' => $url, 'installation_status' => S::Ready]);
+            $this->log($instance, S::Ready, 'SUCCESS', 'Dominio confirmado y aplicación accesible.');
+            return $instance->fresh();
+        } catch (ConnectionException) {
+            $message = 'No fue posible conectar con el dominio. Revise DNS, SSL y disponibilidad.';
+            $this->log($instance, 'CONFIRMING_DOMAIN', 'FAILED', $message); throw new RuntimeException($message);
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (Throwable) {
+            $message = 'No fue posible validar el dominio. Revise DNS, SSL y disponibilidad.';
+            $this->log($instance, 'CONFIRMING_DOMAIN', 'FAILED', $message); throw new RuntimeException($message);
+        }
     }
 
     private function run(IkontrolInstance $instance, IkontrolVersion $version, int $start): IkontrolInstance
@@ -144,11 +160,27 @@ class InstanceProvisioningService
             [S::AssigningDatabaseUser, fn () => $this->cpanel->assignUserToDatabase($instance->db_name)],
             [S::DeployingFiles, fn () => $deployment->deployTemplate($instance, $template)],
             [S::ImportingDatabaseTemplate, fn () => $database->import($instance, $template)],
-            [S::CreatingEnv, fn () => $deployment->createEnvironment($instance)],
-            [S::GeneratingAppKey, fn () => $this->templateCommand($deployment, $instance, 'key:generate', ['--force'])],
+            [S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance)],
+            [S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance)],
             [S::Optimizing, fn () => $this->templateCommand($deployment, $instance, 'cache:clear', [])],
-            [S::TestingConnection, fn () => throw_if(! $this->connection->test($instance)['success'], new RuntimeException('La conexión de la instalación falló.'))],
+            [S::VerifyingApplicationDatabase, fn () => $this->templateCommand($deployment, $instance, 'ikontrol:database-check', [])],
         ];
+    }
+
+    public function regenerateTemplateConfiguration(IkontrolInstance $instance): IkontrolInstance
+    {
+        if (! $instance->template || ! in_array($instance->installation_status, [S::ReadyForDomain, S::Failed], true)) throw new RuntimeException('La instalación no puede regenerar configuración.');
+        $deployment = $this->deployment ?? app(IkontrolDeploymentService::class);
+        try {
+            $this->step($instance, S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance));
+            $this->step($instance, S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance));
+            $this->step($instance, S::VerifyingApplicationDatabase, fn () => $this->templateCommand($deployment, $instance, 'ikontrol:database-check', []));
+            $instance->update(['installation_status'=>S::ReadyForDomain]);
+            $this->audit->record('regenerate_instance_configuration', 'Configuración CodeIgniter regenerada y conexión verificada.', $instance);
+            return $instance->fresh();
+        } catch (Throwable $e) {
+            $failed = $instance->installation_status; $instance->update(['installation_status'=>S::Failed]); $this->log($instance, $failed, 'FAILED', $this->safeMessage($e)); throw new RuntimeException($this->safeMessage($e));
+        }
     }
 
     private function sourceAvailable(IkontrolVersion|IkontrolTemplate $source): bool
@@ -168,6 +200,11 @@ class InstanceProvisioningService
     {
         $result = $deployment->runTemplateCommand($instance, $command, $arguments);
         if (($result['exit_code'] ?? 1) !== 0) throw new RuntimeException('Spark falló: '.$result['output']);
+    }
+
+    private function ensureTemplateKey(IkontrolDeploymentService $deployment, IkontrolInstance $instance): void
+    {
+        if (! $deployment->templateHasEncryptionKey($instance)) $this->templateCommand($deployment, $instance, 'key:generate', ['--force']);
     }
 
     private function optimize(IkontrolDeploymentService $deployment, IkontrolInstance $instance): void

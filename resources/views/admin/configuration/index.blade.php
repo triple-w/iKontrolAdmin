@@ -7,7 +7,7 @@
  $diagnostic=session('diagnostic');
  $sections=[
   ['cPanel','cpanel','tabler-cloud','primary',[['Host',config('ikontrol.cpanel.host')?:'No configurado'],['Puerto',config('ikontrol.cpanel.port')],['Usuario',config('ikontrol.cpanel.username')?:'No configurado'],['Token',config('ikontrol.cpanel.token')?'Configurado':'No configurado']],'Probar consulta de bases'],
-  ['MySQL global','mysql','tabler-database','info',[['Host',config('ikontrol.db.host')?:'No configurado'],['Puerto',config('ikontrol.db.port')],['Usuario',config('ikontrol.db.username')?:'No configurado'],['Password',config('ikontrol.db.password')!==null?'Configurado':'No configurado']],'Probar conexión global'],
+  ['Credenciales globales iKontrol','mysql','tabler-database','info',[['Host',config('ikontrol.db.host')?:'No configurado'],['Puerto',config('ikontrol.db.port')],['Usuario',config('ikontrol.db.username')?:'No configurado'],['Password configurado',filled(config('ikontrol.db.password'))?'Sí':'No'],['Uso','Se asignará a todas las bases iKontrol nuevas']],'Probar conexión global'],
   ['Filesystem','filesystem','tabler-folder','warning',[['Root',config('ikontrol.instances_root')?:'No configurado']],'Probar permisos'],
   ['FactuCare Legacy','factucare','tabler-database-search','danger',[['Host',config('fc2.host')?:'No configurado'],['Puerto',config('fc2.port')],['Base',config('fc2.database')?:'No configurada'],['Usuario',config('fc2.username')?:'No configurado'],['Password',config('fc2.password')!==null?'Configurado':'No configurado']],'Probar conexión FactuCare'],
  ];
