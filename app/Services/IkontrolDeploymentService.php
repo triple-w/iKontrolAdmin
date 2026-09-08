@@ -179,6 +179,17 @@ class IkontrolDeploymentService
         return ($this->spark ?? app(AllowedSparkRunner::class))->run($this->safeInstancePath($instance), $command, $arguments);
     }
 
+    public function installOperationalCommandsFor(IkontrolInstance $instance): void
+    {
+        $path=$this->safeInstancePath($instance); $this->installDatabaseCheckCommand($path); $this->installOperationalCommands($path);
+    }
+
+    public function runSensitiveTemplateCommand(IkontrolInstance $instance, string $command, array $arguments, string $input): array
+    {
+        $this->installOperationalCommandsFor($instance);
+        return ($this->spark ?? app(AllowedSparkRunner::class))->runWithInput($this->safeInstancePath($instance),$command,$arguments,$input);
+    }
+
     private function envValue(mixed $value): string
     {
         $value = str_replace(["\\", '"', '$', "\r", "\n"], ['\\\\', '\\"', '\\$', '', ''], (string) $value);
@@ -222,6 +233,30 @@ class IkontrolDatabaseCheck extends BaseCommand
 }
 PHP);
         @chmod($target, 0640);
+    }
+
+    private function installOperationalCommands(string $path): void
+    {
+        $directory=$path.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Commands'; File::ensureDirectoryExists($directory,0750);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolAdminProvision.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolAdminProvision extends BaseCommand {
+ protected $group='iKontrol'; protected $name='ikontrol:admin-provision'; protected $usage='ikontrol:admin-provision <name> <email>';
+ public function run(array $params){if(count($params)!==2||!filter_var($params[1],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Datos de administrador inválidos.');$password=rtrim((string)fgets(STDIN),"\r\n");if(strlen($password)<12)throw new \RuntimeException('La contraseña debe tener al menos 12 caracteres.');$db=\Config\Database::connect();if($db->table('users')->where('email',$params[1])->where('deleted',0)->countAllResults()>0)throw new \RuntimeException('El correo ya existe.');$parts=preg_split('/\s+/',trim($params[0]),2);$ok=$db->table('users')->insert(['first_name'=>$parts[0],'last_name'=>$parts[1]??'','user_type'=>'staff','is_admin'=>1,'role_id'=>0,'email'=>$params[1],'password'=>password_hash($password,PASSWORD_DEFAULT),'status'=>'active','client_id'=>0,'is_primary_contact'=>0,'job_title'=>'Admin','disable_login'=>0,'gender'=>'male','language'=>'','enable_web_notification'=>1,'enable_email_notification'=>1,'created_at'=>date('Y-m-d H:i:s'),'requested_account_removal'=>0,'deleted'=>0]);unset($password);if(!$ok)throw new \RuntimeException('No fue posible crear el administrador.');CLI::write('ADMIN_CREATED','green');}
+}
+PHP);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolAdminPasswordSet extends BaseCommand {
+ protected $group='iKontrol'; protected $name='ikontrol:admin-password-set'; protected $usage='ikontrol:admin-password-set <email>';
+ public function run(array $params){if(count($params)!==1||!filter_var($params[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$password=rtrim((string)fgets(STDIN),"\r\n");if(strlen($password)<12)throw new \RuntimeException('La contraseña debe tener al menos 12 caracteres.');$db=\Config\Database::connect();$users=$db->table('users')->select('id')->where(['email'=>$params[0],'deleted'=>0,'user_type'=>'staff'])->get()->getResultArray();if(count($users)!==1)throw new \RuntimeException('Administrador inexistente o ambiguo.');$ok=$db->table('users')->where('id',$users[0]['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT)]);unset($password);if(!$ok)throw new \RuntimeException('No fue posible actualizar la contraseña.');CLI::write('PASSWORD_UPDATED','green');}
+}
+PHP);
+        @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminProvision.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php',0640);
     }
 
     private function normalizePath(string $path): string

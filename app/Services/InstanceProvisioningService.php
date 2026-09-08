@@ -47,7 +47,7 @@ class InstanceProvisioningService
         $version = IkontrolVersion::whereKey($data['ikontrol_version_id'] ?? null)->where('active', true)->firstOrFail();
         $client = ($data['client_mode'] ?? null) === 'existing' ? Client::findOrFail($data['client_id']) : Client::create(['name' => $data['new_client_name'], 'active' => true]);
         $preview = $this->preview($data['slug'], $version);
-        $instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_version_id' => $version->id, 'name' => $data['name'], 'slug' => $data['slug'], 'folder_name' => $preview['folder_name'], 'absolute_path' => $preview['absolute_path'], 'domain' => $data['domain'] ?? null, 'url' => $preview['domain'], 'db_host' => config('ikontrol.db.host'), 'db_port' => config('ikontrol.db.port'), 'db_name' => $preview['db_name'], 'installation_status' => S::Pending]);
+        $instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_version_id' => $version->id, 'name' => $data['name'], 'slug' => $data['slug'], 'folder_name' => $preview['folder_name'], 'absolute_path' => $preview['absolute_path'], 'domain' => $data['domain'] ?? null, 'url' => $preview['domain'], 'db_host' => config('ikontrol.db.host'), 'db_port' => config('ikontrol.db.port'), 'db_name' => $preview['db_name'], 'is_test'=>(bool)($data['is_test']??false), 'installation_status' => S::Pending]);
         return $this->run($instance, $version, 0);
     }
 
@@ -65,6 +65,13 @@ class InstanceProvisioningService
         $steps = $this->steps($instance, $version);
         $start = array_search($failed, array_map(fn ($step) => $step[0]->value, $steps), true);
         return $this->run($instance, $version, $start === false ? 0 : $start);
+    }
+
+    public function reprovisionTestInstance(IkontrolInstance $instance): IkontrolInstance
+    {
+        if (! $instance->is_test || $instance->installation_status === S::Ready || ! $instance->template || strcasecmp($instance->name, 'DOLD') === 0) throw new RuntimeException('Solo una instalación de prueba no productiva puede reiniciarse.');
+        $instance->update(['installation_status'=>S::Pending,'installed_at'=>null,'last_connection_at'=>null,'last_connection_status'=>null,'last_connection_error'=>null]);
+        return $this->runTemplate($instance, $instance->template, 0);
     }
 
     public function confirmDomain(IkontrolInstance $instance): IkontrolInstance
@@ -131,7 +138,7 @@ class InstanceProvisioningService
         $template = IkontrolTemplate::whereKey($data['ikontrol_template_id'])->where('active', true)->firstOrFail();
         $client = ($data['client_mode'] ?? null) === 'existing' ? Client::findOrFail($data['client_id']) : Client::create(['name' => $data['new_client_name'], 'active' => true]);
         $preview = $this->preview($data['slug'], $template);
-        $instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_template_id' => $template->id, 'name' => $data['name'], 'slug' => $data['slug'], 'folder_name' => $preview['folder_name'], 'absolute_path' => $preview['absolute_path'], 'url' => $preview['domain'], 'db_host' => config('ikontrol.db.host'), 'db_port' => config('ikontrol.db.port'), 'db_name' => $preview['db_name'], 'app_version' => $template->app_version, 'schema_version' => $template->schema_version, 'installation_status' => S::Pending]);
+        $instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_template_id' => $template->id, 'name' => $data['name'], 'slug' => $data['slug'], 'folder_name' => $preview['folder_name'], 'absolute_path' => $preview['absolute_path'], 'url' => $preview['domain'], 'db_host' => config('ikontrol.db.host'), 'db_port' => config('ikontrol.db.port'), 'db_name' => $preview['db_name'], 'app_version' => $template->app_version, 'schema_version' => $template->schema_version, 'is_test'=>(bool)($data['is_test']??false), 'installation_status' => S::Pending]);
         return $this->runTemplate($instance, $template, 0);
     }
 
@@ -162,7 +169,8 @@ class InstanceProvisioningService
             [S::ImportingDatabaseTemplate, fn () => $database->import($instance, $template)],
             [S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance)],
             [S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance)],
-            [S::Optimizing, fn () => $this->templateCommand($deployment, $instance, 'cache:clear', [])],
+            [S::ClearingCache, fn () => $this->templateCommand($deployment, $instance, 'cache:clear', [])],
+            [S::RunningMigrations, fn () => $this->templateCommand($deployment, $instance, 'migrate', [])],
             [S::VerifyingApplicationDatabase, fn () => $this->templateCommand($deployment, $instance, 'ikontrol:database-check', [])],
         ];
     }
