@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, InstanceOperationController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, InstanceDiagnosticsController, InstanceOperationController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -20,6 +20,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/inspect', [InstanceController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.inspect');
     Route::post('/instances/{instance}/operations/{operation}', [InstanceOperationController::class, 'run'])->whereIn('operation',['files','database','reassign-user','key','cache','migrate','health'])->middleware('throttle:10,1')->name('instances.operations.run');
     Route::post('/instances/{instance}/administrators/{operation}', [InstanceOperationController::class, 'admin'])->whereIn('operation',['create','reset'])->middleware('throttle:5,1')->name('instances.operations.admin');
+    Route::post('/instances/{instance}/stamps', [InstanceDiagnosticsController::class,'stamps'])->middleware('throttle:5,1')->name('instances.stamps.move');
+    Route::get('/instances/{instance}/logs/{file}', [InstanceDiagnosticsController::class,'log'])->where('file','[A-Za-z0-9._-]+\\.log')->middleware('throttle:30,1')->name('instances.logs.show');
+    Route::post('/instances/{instance}/logs/clear', [InstanceDiagnosticsController::class,'clearLogs'])->middleware('throttle:3,1')->name('instances.logs.clear');
     Route::post('/instances/{instance}/destructive/{operation}', [InstanceOperationController::class, 'destructive'])->whereIn('operation',['restart','delete'])->middleware('throttle:2,1')->name('instances.operations.destructive');
     Route::get('/provisioning/new', [ProvisioningController::class, 'create'])->name('provisioning.create');
     Route::post('/provisioning/preflight', [ProvisioningController::class, 'preflight'])->name('provisioning.preflight');

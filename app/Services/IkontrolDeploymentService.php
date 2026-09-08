@@ -190,6 +190,12 @@ class IkontrolDeploymentService
         return ($this->spark ?? app(AllowedSparkRunner::class))->runWithInput($this->safeInstancePath($instance),$command,$arguments,$input);
     }
 
+    public function runStampMovement(IkontrolInstance $instance,string $action,int $quantity,string $reason,string $requestId):array
+    {
+        $this->installOperationalCommandsFor($instance);
+        return ($this->spark ?? app(AllowedSparkRunner::class))->runStampMovement($this->safeInstancePath($instance),$action,$quantity,$reason,$requestId);
+    }
+
     private function envValue(mixed $value): string
     {
         $value = str_replace(["\\", '"', '$', "\r", "\n"], ['\\\\', '\\"', '\\$', '', ''], (string) $value);
@@ -256,7 +262,19 @@ final class IkontrolAdminPasswordSet extends BaseCommand {
  public function run(array $params){if(count($params)!==1||!filter_var($params[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$password=rtrim((string)fgets(STDIN),"\r\n");if(strlen($password)<12)throw new \RuntimeException('La contraseña debe tener al menos 12 caracteres.');$db=\Config\Database::connect();$users=$db->table('users')->select('id')->where(['email'=>$params[0],'deleted'=>0,'user_type'=>'staff'])->get()->getResultArray();if(count($users)!==1)throw new \RuntimeException('Administrador inexistente o ambiguo.');$ok=$db->table('users')->where('id',$users[0]['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT)]);unset($password);if(!$ok)throw new \RuntimeException('No fue posible actualizar la contraseña.');CLI::write('PASSWORD_UPDATED','green');}
 }
 PHP);
-        @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminProvision.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php',0640);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolStampsStatus.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use App\Services\Fiscal\FiscalStampAdminService;use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolStampsStatus extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:stamps-status';public function run(array$params){$service=new FiscalStampAdminService();$accounts=$service->getAccounts();$credited=0;$consumed=0;$history=[];foreach($accounts as$a){foreach($service->getHistory((int)$a['issuer_profile_id'])as$m){$q=(int)$m['quantity'];if($q>0)$credited+=$q;elseif(in_array($m['movement_type'],['document_consumption','reconciliation_consumption','cancellation_request','cancellation_status_query','adjustment_debit'],true))$consumed+=abs($q);$history[]=$m;}}usort($history,fn($a,$b)=>(int)$b['id']<=>(int)$a['id']);CLI::write(json_encode(['status'=>'SUCCESS','balance'=>array_sum(array_map(fn($a)=>(int)$a['available_balance'],$accounts)),'credited'=>$credited,'consumed'=>$consumed,'accounts'=>$accounts,'movements'=>array_slice($history,0,20)],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));}}
+PHP);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolStampsAdjust.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use App\Services\Fiscal\FiscalStampAdminService;use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolStampsAdjust extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:stamps-adjust';public function run(array$p){if(count($p)!==4||!in_array($p[0],['credit','debit'],true)||!ctype_digit($p[1])||(int)$p[1]<1||!preg_match('/^[a-f0-9]{32}$/',$p[2])||trim($p[3])==='')throw new \RuntimeException('Movimiento inválido.');$service=new FiscalStampAdminService();$accounts=$service->getAccounts();if(count($accounts)!==1)throw new \RuntimeException('La instancia debe tener exactamente un emisor fiscal.');$a=$accounts[0];$env=in_array($a['profile_environment']??null,['development','production'],true)?$a['profile_environment']:'development';$m=$p[0]==='credit'?$service->credit((int)$a['issuer_profile_id'],$env,(int)$p[1],$p[3],null,$p[2]):$service->debit((int)$a['issuer_profile_id'],$env,(int)$p[1],$p[3],null,$p[2]);CLI::write(json_encode(['status'=>'SUCCESS','available_after'=>(int)$m->available_after,'movement_id'=>(int)$m->id]));}}
+PHP);
+        @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminProvision.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolStampsStatus.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolStampsAdjust.php',0640);
     }
 
     private function normalizePath(string $path): string
