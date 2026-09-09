@@ -52,7 +52,6 @@ class InstanceRuntimeDiagnosticService
 
     private function runJson(IkontrolInstance $instance, string $command): array
     {
-        $this->deployment->installOperationalCommandsFor($instance);
         return $this->decode($this->deployment->runTemplateCommand($instance, $command));
     }
 

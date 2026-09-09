@@ -47,7 +47,6 @@ class InstanceRuntimeDiagnosticTest extends TestCase
     public function test_log_check_uses_fixed_allowlisted_command_and_audits(): void
     {
         $deployment = Mockery::mock(IkontrolDeploymentService::class);
-        $deployment->shouldReceive('installOperationalCommandsFor')->once();
         $deployment->shouldReceive('runTemplateCommand')->once()->with($this->instance, 'ikontrol:log-check')->andReturn(['exit_code' => 0, 'output' => '{"status":"SUCCESS","written":true}']);
         $result = (new InstanceRuntimeDiagnosticService($deployment, app(AuditService::class)))->generateTestLog($this->instance);
         $this->assertTrue($result['written']);

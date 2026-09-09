@@ -25,6 +25,11 @@ return [
     ],
     'deployment' => [
         'command_timeout' => (int) env('IKONTROL_DEPLOYMENT_TIMEOUT', 300),
+        'diagnostic_tools_version' => '1.0.0',
+        // Contracts are keyed by the template schema_version. Undefined schemas are reported, never guessed.
+        'schema_tables' => [
+            'rise-administrative-baseline-1' => ['users', 'roles', 'team', 'settings', 'dashboards', 'custom_widgets'],
+        ],
     ],
     'cpanel' => [
         'host' => env('CPANEL_HOST'),

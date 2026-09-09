@@ -181,7 +181,11 @@ class IkontrolDeploymentService
 
     public function installOperationalCommandsFor(IkontrolInstance $instance): void
     {
-        $path=$this->safeInstancePath($instance); $this->installDatabaseCheckCommand($path); $this->installOperationalCommands($path);
+        $path=$this->safeInstancePath($instance);
+        $this->guardManagedCommandTargets($path);
+        $this->installDatabaseCheckCommand($path);
+        $this->installOperationalCommands($path);
+        $this->writeDiagnosticToolsManifest($path);
     }
 
     public function runSensitiveTemplateCommand(IkontrolInstance $instance, string $command, array $arguments, string $input): array
@@ -199,6 +203,11 @@ class IkontrolDeploymentService
     public function runDiagnosticCommand(IkontrolInstance $instance, string $command, string $email): array
     {
         $this->installOperationalCommandsFor($instance);
+        return ($this->spark ?? app(AllowedSparkRunner::class))->runDiagnostic($this->safeInstancePath($instance), $command, $email);
+    }
+
+    public function runInstalledDiagnosticCommand(IkontrolInstance $instance, string $command, string $email): array
+    {
         return ($this->spark ?? app(AllowedSparkRunner::class))->runDiagnostic($this->safeInstancePath($instance), $command, $email);
     }
 
@@ -290,7 +299,7 @@ PHP);
 <?php
 namespace App\Commands;
 use CodeIgniter\CLI\{BaseCommand,CLI};
-final class IkontrolLogCheck extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:log-check';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$before=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];log_message('error','IKONTROL_ADMIN_LOG_CHECK');clearstatcache();$after=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];$written=count($after)>count($before);if(!$written)foreach($after as$file)if(filemtime($file)>=time()-5){$written=true;break;}CLI::write(json_encode(['status'=>$written?'SUCCESS':'FAILED','written'=>$written,'file_count'=>count($after)]));if(!$written)throw new \RuntimeException('El logger no escribió el evento de prueba.');}}
+final class IkontrolLogCheck extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:log-check';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$logger=config('Logger');$before=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];$beforeState=[];foreach($before as$f)$beforeState[basename($f)]=[filesize($f),filemtime($f)];log_message('error','IKONTROL_ADMIN_LOG_CHECK');clearstatcache();$after=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];$written=false;$testFile=null;foreach($after as$f){$state=[filesize($f),filemtime($f)];if(!isset($beforeState[basename($f)])||$beforeState[basename($f)]!==$state){$written=true;$testFile=basename($f);break;}}$handlers=array_map(fn($c)=>basename(str_replace('\\','/',$c)),array_keys((array)$logger->handlers));$reason=$written?null:($logger->threshold===0?'LOGGER_DISABLED_BY_THRESHOLD':(!is_dir($dir)?'LOG_DIRECTORY_MISSING':(!is_writable($dir)?'LOG_DIRECTORY_NOT_WRITABLE':'HANDLER_DID_NOT_WRITE')));CLI::write(json_encode(['logs_dir_exists'=>is_dir($dir),'logs_dir_writable'=>is_dir($dir)&&is_writable($dir),'logger_threshold'=>$logger->threshold,'handlers'=>$handlers,'test_write_attempted'=>true,'test_file_created'=>$written,'test_file'=>$testFile,'reason'=>$reason,'status'=>$written?'READY':'FAILED'],JSON_UNESCAPED_SLASHES));}}
 PHP);
         File::put($directory.DIRECTORY_SEPARATOR.'IkontrolAdminDiagnose.php', <<<'PHP'
 <?php
@@ -310,5 +319,39 @@ PHP);
     private function normalizePath(string $path): string
     {
         return rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR);
+    }
+
+    private function guardManagedCommandTargets(string $path): void
+    {
+        $directory = $path.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Commands';
+        $commands = [
+            'IkontrolDatabaseCheck.php' => 'ikontrol:database-check',
+            'IkontrolLogCheck.php' => 'ikontrol:log-check',
+            'IkontrolAdminDiagnose.php' => 'ikontrol:admin-diagnose',
+            'IkontrolDashboardCheck.php' => 'ikontrol:dashboard-check',
+        ];
+        $manifest = $path.DIRECTORY_SEPARATOR.'.ikontroladmin-diagnostic-tools.json';
+        $owned = is_file($manifest) ? json_decode((string) File::get($manifest), true) : [];
+        foreach ($commands as $file => $command) {
+            $target = $directory.DIRECTORY_SEPARATOR.$file;
+            if (! is_file($target)) continue;
+            $hash = hash_file('sha256', $target);
+            $knownHash = $owned['files'][$file] ?? null;
+            $legacySignature = str_contains((string) File::get($target), $command) && str_contains((string) File::get($target), 'namespace App\\Commands');
+            if (($knownHash && ! hash_equals($knownHash, $hash)) || (! $knownHash && ! $legacySignature)) {
+                throw new RuntimeException('Existe un comando no administrado que no puede sobrescribirse: '.$file);
+            }
+        }
+    }
+
+    private function writeDiagnosticToolsManifest(string $path): void
+    {
+        $directory = $path.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Commands';
+        $files = [];
+        foreach (['IkontrolDatabaseCheck.php', 'IkontrolLogCheck.php', 'IkontrolAdminDiagnose.php', 'IkontrolDashboardCheck.php'] as $file) {
+            if (is_file($directory.DIRECTORY_SEPARATOR.$file)) $files[$file] = hash_file('sha256', $directory.DIRECTORY_SEPARATOR.$file);
+        }
+        File::put($path.DIRECTORY_SEPARATOR.'.ikontroladmin-diagnostic-tools.json', json_encode(['managed_by' => 'iKontrolAdmin', 'version' => config('ikontrol.deployment.diagnostic_tools_version'), 'files' => $files], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        @chmod($path.DIRECTORY_SEPARATOR.'.ikontroladmin-diagnostic-tools.json', 0640);
     }
 }

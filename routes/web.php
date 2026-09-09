@@ -25,6 +25,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/logs/clear', [InstanceDiagnosticsController::class,'clearLogs'])->middleware('throttle:3,1')->name('instances.logs.clear');
     Route::post('/instances/{instance}/logs/check', [InstanceDiagnosticsController::class,'logCheck'])->middleware('throttle:5,1')->name('instances.logs.check');
     Route::post('/instances/{instance}/diagnostics/{type}', [InstanceDiagnosticsController::class,'diagnose'])->whereIn('type',['admin','dashboard'])->middleware('throttle:10,1')->name('instances.diagnostics.run');
+    Route::post('/instances/{instance}/diagnostic', [InstanceDiagnosticsController::class,'comprehensive'])->middleware('throttle:5,1')->name('instances.diagnostic.run');
+    Route::post('/instances/{instance}/diagnostic/tools', [InstanceDiagnosticsController::class,'installTools'])->middleware('throttle:3,1')->name('instances.diagnostic.tools');
+    Route::post('/instances/{instance}/diagnostic/writable', [InstanceDiagnosticsController::class,'repairWritable'])->middleware('throttle:3,1')->name('instances.diagnostic.writable');
     Route::post('/instances/{instance}/destructive/{operation}', [InstanceOperationController::class, 'destructive'])->whereIn('operation',['restart','delete'])->middleware('throttle:2,1')->name('instances.operations.destructive');
     Route::get('/provisioning/new', [ProvisioningController::class, 'create'])->name('provisioning.create');
     Route::post('/provisioning/preflight', [ProvisioningController::class, 'preflight'])->name('provisioning.preflight');
