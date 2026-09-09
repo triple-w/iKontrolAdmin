@@ -196,6 +196,12 @@ class IkontrolDeploymentService
         return ($this->spark ?? app(AllowedSparkRunner::class))->runStampMovement($this->safeInstancePath($instance),$action,$quantity,$reason,$requestId);
     }
 
+    public function runDiagnosticCommand(IkontrolInstance $instance, string $command, string $email): array
+    {
+        $this->installOperationalCommandsFor($instance);
+        return ($this->spark ?? app(AllowedSparkRunner::class))->runDiagnostic($this->safeInstancePath($instance), $command, $email);
+    }
+
     private function envValue(mixed $value): string
     {
         $value = str_replace(["\\", '"', '$', "\r", "\n"], ['\\\\', '\\"', '\\$', '', ''], (string) $value);
@@ -250,7 +256,7 @@ namespace App\Commands;
 use CodeIgniter\CLI\{BaseCommand,CLI};
 final class IkontrolAdminProvision extends BaseCommand {
  protected $group='iKontrol'; protected $name='ikontrol:admin-provision'; protected $usage='ikontrol:admin-provision <name> <email>';
- public function run(array $params){if(count($params)!==2||!filter_var($params[1],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Datos de administrador inválidos.');$password=rtrim((string)fgets(STDIN),"\r\n");if(strlen($password)<12)throw new \RuntimeException('La contraseña debe tener al menos 12 caracteres.');$db=\Config\Database::connect();if($db->table('users')->where('email',$params[1])->where('deleted',0)->countAllResults()>0)throw new \RuntimeException('El correo ya existe.');$parts=preg_split('/\s+/',trim($params[0]),2);$ok=$db->table('users')->insert(['first_name'=>$parts[0],'last_name'=>$parts[1]??'','user_type'=>'staff','is_admin'=>1,'role_id'=>0,'email'=>$params[1],'password'=>password_hash($password,PASSWORD_DEFAULT),'status'=>'active','client_id'=>0,'is_primary_contact'=>0,'job_title'=>'Admin','disable_login'=>0,'gender'=>'male','language'=>'','enable_web_notification'=>1,'enable_email_notification'=>1,'created_at'=>date('Y-m-d H:i:s'),'requested_account_removal'=>0,'deleted'=>0]);unset($password);if(!$ok)throw new \RuntimeException('No fue posible crear el administrador.');CLI::write('ADMIN_CREATED','green');}
+ public function run(array $params){if(count($params)!==2||!filter_var($params[1],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Datos de administrador inválidos.');$password=rtrim((string)fgets(STDIN),"\r\n");if(strlen($password)<12)throw new \RuntimeException('La contraseña debe tener al menos 12 caracteres.');$db=\Config\Database::connect();if($db->table('users')->where('email',$params[1])->where('deleted',0)->countAllResults()>0)throw new \RuntimeException('El correo ya existe.');$parts=preg_split('/\s+/',trim($params[0]),2);$db->transStart();$ok=$db->table('users')->insert(['first_name'=>$parts[0],'last_name'=>$parts[1]??'','user_type'=>'staff','is_admin'=>1,'role_id'=>0,'email'=>strtolower($params[1]),'password'=>password_hash($password,PASSWORD_DEFAULT),'status'=>'active','client_id'=>0,'is_primary_contact'=>0,'job_title'=>'Admin','disable_login'=>0,'gender'=>'male','language'=>'','enable_web_notification'=>1,'enable_email_notification'=>1,'created_at'=>date('Y-m-d H:i:s'),'requested_account_removal'=>0,'deleted'=>0]);$userId=$db->insertID();if($ok&&$db->tableExists('team_member_job_info'))$ok=$db->table('team_member_job_info')->insert(['user_id'=>$userId,'salary'=>0,'salary_term'=>'','date_of_hire'=>date('Y-m-d')]);unset($password);$db->transComplete();if(!$ok||!$db->transStatus())throw new \RuntimeException('No fue posible crear el administrador completo.');CLI::write('ADMIN_CREATED','green');}
 }
 PHP);
         File::put($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php', <<<'PHP'
@@ -274,7 +280,31 @@ namespace App\Commands;
 use App\Services\Fiscal\FiscalStampAdminService;use CodeIgniter\CLI\{BaseCommand,CLI};
 final class IkontrolStampsAdjust extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:stamps-adjust';public function run(array$p){if(count($p)!==4||!in_array($p[0],['credit','debit'],true)||!ctype_digit($p[1])||(int)$p[1]<1||!preg_match('/^[a-f0-9]{32}$/',$p[2])||trim($p[3])==='')throw new \RuntimeException('Movimiento inválido.');$service=new FiscalStampAdminService();$accounts=$service->getAccounts();if(count($accounts)!==1)throw new \RuntimeException('La instancia debe tener exactamente un emisor fiscal.');$a=$accounts[0];$env=in_array($a['profile_environment']??null,['development','production'],true)?$a['profile_environment']:'development';$m=$p[0]==='credit'?$service->credit((int)$a['issuer_profile_id'],$env,(int)$p[1],$p[3],null,$p[2]):$service->debit((int)$a['issuer_profile_id'],$env,(int)$p[1],$p[3],null,$p[2]);CLI::write(json_encode(['status'=>'SUCCESS','available_after'=>(int)$m->available_after,'movement_id'=>(int)$m->id]));}}
 PHP);
-        @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminProvision.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolAdminPasswordSet.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolStampsStatus.php',0640); @chmod($directory.DIRECTORY_SEPARATOR.'IkontrolStampsAdjust.php',0640);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolLoggingStatus.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolLoggingStatus extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:logging-status';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$logger=config('Logger');$handlers=[];foreach(array_keys((array)$logger->handlers)as$class)$handlers[]=basename(str_replace('\\','/',$class));$files=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];CLI::write(json_encode(['status'=>'SUCCESS','directory_exists'=>file_exists($dir),'is_directory'=>is_dir($dir),'writable'=>is_dir($dir)&&is_writable($dir),'file_count'=>count($files),'environment'=>ENVIRONMENT,'threshold'=>$logger->threshold,'handlers'=>$handlers],JSON_UNESCAPED_SLASHES));}}
+PHP);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolLogCheck.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolLogCheck extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:log-check';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$before=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];log_message('error','IKONTROL_ADMIN_LOG_CHECK');clearstatcache();$after=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];$written=count($after)>count($before);if(!$written)foreach($after as$file)if(filemtime($file)>=time()-5){$written=true;break;}CLI::write(json_encode(['status'=>$written?'SUCCESS':'FAILED','written'=>$written,'file_count'=>count($after)]));if(!$written)throw new \RuntimeException('El logger no escribió el evento de prueba.');}}
+PHP);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolAdminDiagnose.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolAdminDiagnose extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:admin-diagnose';public function run(array$p){if(count($p)!==1||!filter_var($p[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$db=\Config\Database::connect();$tables=array_flip($db->listTables());$name=fn($n)=>$db->prefixTable($n);$result=['user_exists'=>false,'active'=>false,'staff'=>false,'role_ok'=>false,'permissions_ok'=>false,'profile_ok'=>false,'dashboard_prerequisites'=>[],'status'=>'FAILED'];if(!isset($tables[$name('users')])){$result['dashboard_prerequisites']['users_table']=false;CLI::write(json_encode($result));return;}$user=$db->table('users')->select('id,user_type,is_admin,role_id,status,disable_login,deleted')->where('email',strtolower($p[0]))->get()->getRowArray();if(!$user){CLI::write(json_encode($result));return;}$result['user_exists']=true;$result['active']=$user['status']==='active'&&!(int)$user['disable_login']&&!(int)$user['deleted'];$result['staff']=$user['user_type']==='staff';$result['role_ok']=(int)$user['is_admin']===1&&((int)$user['role_id']===0);$result['permissions_ok']=$result['role_ok'];$jobTable=isset($tables[$name('team_member_job_info')]);$result['profile_ok']=$jobTable&&$db->table('team_member_job_info')->where('user_id',$user['id'])->countAllResults()===1;foreach(['settings','dashboards','team']as$t)$result['dashboard_prerequisites'][$t.'_table']=isset($tables[$name($t)]);$critical=$result['active']&&$result['staff']&&$result['role_ok']&&$result['permissions_ok']&&!in_array(false,$result['dashboard_prerequisites'],true);$result['status']=$critical?($result['profile_ok']?'READY':'WARNING'):'FAILED';CLI::write(json_encode($result));}}
+PHP);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolDashboardCheck.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolDashboardCheck extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:dashboard-check';public function run(array$p){if(count($p)!==1||!filter_var($p[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$db=\Config\Database::connect();$tables=array_flip($db->listTables());$name=fn($n)=>$db->prefixTable($n);$checks=[];foreach(['users','roles','team','settings','dashboards','custom_widgets']as$t)$checks[$t.'_table']=isset($tables[$name($t)]);$user=null;if($checks['users_table'])$user=$db->table('users')->select('id,user_type,is_admin,role_id,status,disable_login,deleted')->where('email',strtolower($p[0]))->get()->getRowArray();$checks['user_access_record']=$user&&$user['status']==='active'&&!(int)$user['deleted']&&!(int)$user['disable_login'];$checks['staff_dashboard']=$user&&$user['user_type']==='staff';$checks['admin_access']=$user&&(int)$user['is_admin']===1&&(int)$user['role_id']===0;$status=in_array(false,$checks,true)?'FAILED':'READY';CLI::write(json_encode(['status'=>$status,'checks'=>$checks]));}}
+PHP);
+        foreach(['IkontrolAdminProvision.php','IkontrolAdminPasswordSet.php','IkontrolStampsStatus.php','IkontrolStampsAdjust.php','IkontrolLoggingStatus.php','IkontrolLogCheck.php','IkontrolAdminDiagnose.php','IkontrolDashboardCheck.php']as$file)@chmod($directory.DIRECTORY_SEPARATOR.$file,0640);
     }
 
     private function normalizePath(string $path): string

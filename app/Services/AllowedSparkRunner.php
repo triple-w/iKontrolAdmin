@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 
 class AllowedSparkRunner
 {
-    private const COMMANDS = ['key:generate' => ['--force'], 'cache:clear' => [], 'logs:clear' => ['--force'], 'migrate' => [], 'ikontrol:database-check' => [], 'ikontrol:stamps-status' => []];
+    private const COMMANDS = ['key:generate' => ['--force'], 'cache:clear' => [], 'logs:clear' => ['--force'], 'migrate' => [], 'ikontrol:database-check' => [], 'ikontrol:stamps-status' => [], 'ikontrol:logging-status' => [], 'ikontrol:log-check' => []];
 
     public function run(string $path, string $command, array $arguments = []): array
     {
@@ -39,6 +39,15 @@ class AllowedSparkRunner
         if (! in_array($action,['credit','debit'],true) || $quantity < 1 || $quantity > 1000000 || ! preg_match('/\A[a-f0-9]{32}\z/',$requestId)) throw new RuntimeException('Movimiento de timbres inválido.');
         $reason=trim($reason); if($reason===''||mb_strlen($reason)>500||str_contains($reason,"\0")||preg_match('/[\r\n]/',$reason))throw new RuntimeException('Motivo inválido.');
         return $this->execute($path,'ikontrol:stamps-adjust',[$action,(string)$quantity,$requestId,$reason]);
+    }
+
+    public function runDiagnostic(string $path, string $command, string $email): array
+    {
+        if (! in_array($command, ['ikontrol:admin-diagnose', 'ikontrol:dashboard-check'], true) || ! filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255) {
+            throw new RuntimeException('Diagnóstico o correo no permitido.');
+        }
+
+        return $this->execute($path, $command, [strtolower($email)]);
     }
 
     private function execute(string $path,string $command,array $arguments):array
