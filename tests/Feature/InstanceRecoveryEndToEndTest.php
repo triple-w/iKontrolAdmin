@@ -65,8 +65,11 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $tools = $diagnostics->installTools($instance);
         $this->assertSame('SPARK_DISCOVERY_AND_JSON_PROTOCOL_OK', $tools['verification_result']);
         $operations = new IkontrolInstanceOperationsService($deployment, $connection, $cpanel, app(AuditService::class), app(InstanceFilesystemService::class), $provisioning);
+        File::put($instance->absolute_path.'/writable/admin.json', json_encode(['email'=>'admin@sandbox.test','profile'=>false]));
+        $this->assertSame('FAILED', app(\App\Services\InstanceRuntimeDiagnosticService::class)->diagnoseAdmin($instance, 'admin@sandbox.test')['status']);
         $admin = $operations->provisionAdmin($instance, 'Sandbox Admin', 'admin@sandbox.test', 'SafeSandboxPassword!');
-        $this->assertSame('ADMIN_DIAGNOSE_READY', $admin['verification_result']);
+        $this->assertSame('ADMIN_AND_DASHBOARD_READY', $admin['verification_result']);
+        $this->assertStringContainsString('logger.threshold = 4', File::get($instance->absolute_path.'/.env'));
 
         $log = app(InstanceLogService::class);
         $runtime = app(\App\Services\InstanceRuntimeDiagnosticService::class);
