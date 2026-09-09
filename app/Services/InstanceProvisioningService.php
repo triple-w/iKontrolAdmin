@@ -178,14 +178,15 @@ class InstanceProvisioningService
 
     public function regenerateTemplateConfiguration(IkontrolInstance $instance): IkontrolInstance
     {
-        if (! $instance->template || ! in_array($instance->installation_status, [S::ReadyForDomain, S::Failed], true)) throw new RuntimeException('La instalación no puede regenerar configuración.');
+        if (! $instance->template || ! in_array($instance->installation_status, [S::ReadyForDomain, S::Ready, S::Failed], true)) throw new RuntimeException('La instalación no puede regenerar configuración.');
+        $originalStatus = $instance->installation_status;
         $deployment = $this->deployment ?? app(IkontrolDeploymentService::class);
         try {
             $this->step($instance, S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance));
             $this->step($instance, S::CreatingEnv, fn () => $deployment->repairTemplateSettings($instance));
             $this->step($instance, S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance));
             $this->step($instance, S::VerifyingApplicationDatabase, fn () => $this->templateCommand($deployment, $instance, 'ikontrol:database-check', []));
-            $instance->update(['installation_status'=>S::ReadyForDomain]);
+            $instance->update(['installation_status'=>$originalStatus === S::Ready ? S::Ready : S::ReadyForDomain]);
             $this->audit->record('regenerate_instance_configuration', 'Configuración CodeIgniter regenerada y conexión verificada.', $instance);
             return $instance->fresh();
         } catch (Throwable $e) {

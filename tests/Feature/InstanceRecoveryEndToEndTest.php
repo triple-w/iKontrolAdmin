@@ -47,7 +47,12 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $connection->shouldReceive('test')->andReturn(['success' => true, 'status' => 'CONNECTED']);
         $connection->shouldReceive('withInstanceConnection')->andReturn(['ikontrol_users', 'ikontrol_roles', 'ikontrol_team', 'ikontrol_settings', 'ikontrol_dashboards', 'ikontrol_custom_widgets']);
         $database = Mockery::mock(IkontrolDatabaseTemplateService::class);
-        $database->shouldReceive('import')->once();
+        $database->shouldReceive('import')->once()->andReturnUsing(function($instance){
+            $seed=array_slice(array_merge(...array_values(config('ikontrol.deployment.settings_baseline'))),0,13,true);
+            File::ensureDirectoryExists($instance->absolute_path.'/writable');
+            File::put($instance->absolute_path.'/writable/settings.json',json_encode($seed));
+            return ['imported'=>true];
+        });
         $deployment = $this->deployment();
         app(IkontrolTemplateValidationService::class)->validate($template);
         $provisioning = new InstanceProvisioningService($cpanel, app(InstanceFilesystemService::class), $connection, app(AuditService::class), $deployment, app(IkontrolTemplateValidationService::class), $database);
@@ -71,6 +76,10 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $this->assertStringContainsString('logger.threshold = 4', File::get($instance->absolute_path.'/.env'));
         $settingsPath=$instance->absolute_path.'/writable/settings.json';
         $settings=json_decode(File::get($settingsPath),true);
+        $expectedBaseline=array_merge(...array_values(config('ikontrol.deployment.settings_baseline')));
+        $this->assertCount(count($expectedBaseline),$settings);
+        foreach(config('ikontrol.deployment.settings_secret_keys') as $secretKey)$this->assertArrayNotHasKey($secretKey,$settings);
+        foreach(config('ikontrol.deployment.settings_baseline.module_default') as $name=>$value)$this->assertSame($value,$settings[$name]);
         $this->assertSame('America/Mexico_City',$settings['timezone']);
         $this->assertSame('spanish',$settings['language']);
         $this->assertSame('',$settings['site_logo']);
@@ -117,7 +126,7 @@ class InstanceRecoveryEndToEndTest extends TestCase
 
     private function sparkHarness(): string
     {
-        return <<<'PHP'
+        $source=<<<'PHP'
 <?php
 $command=$argv[1]??'list';$root=__DIR__;
 echo "CodeIgniter v4.6.1 Command Line Tool - Server Time: 2026-09-09 12:00:00 UTC\n";
@@ -126,7 +135,7 @@ if($command==='list'){foreach(glob($root.'/app/Commands/*.php')?:[]as$file){preg
 if($command==='key:generate'){file_put_contents($root.'/.env',"encryption.key = 'sandbox-key'\n",FILE_APPEND);echo "KEY_GENERATED\n";exit(0);}
 if(in_array($command,['cache:clear','migrate'],true)){echo 'OK';exit(0);}
 if($command==='ikontrol:database-check'){$json(['status'=>'READY']);exit(0);}
-if($command==='ikontrol:settings-baseline'){$file=$root.'/writable/settings.json';$settings=is_file($file)?json_decode(file_get_contents($file),true):[];$baseline=['timezone'=>'America/Mexico_City','language'=>'spanish','date_format'=>'Y-m-d','time_format'=>'small','first_day_of_week'=>'0','weekends'=>'','default_currency'=>'MXN','currency_symbol'=>'$','currency_position'=>'left','decimal_separator'=>'.','no_of_decimals'=>'2','accepted_file_formats'=>'jpg,jpeg,png,doc,xlsx,txt,pdf,zip,webm','site_logo'=>'','favicon'=>'','item_purchase_code'=>'CLEAN-LOCAL-NOT-LICENSED'];$created=[];$corrected=[];$preserved=[];foreach($baseline as$k=>$v){if(!array_key_exists($k,$settings)){$settings[$k]=$v;$created[]=$k;}elseif((in_array($k,['site_logo','favicon'],true)&&in_array($settings[$k],['b:0;','N;'],true))||(in_array($k,['timezone','item_purchase_code'],true)&&trim($settings[$k])==='')){$settings[$k]=$v;$corrected[]=$k;}else$preserved[]=$k;}file_put_contents($file,json_encode($settings));$json(['status'=>'READY','created'=>$created,'corrected'=>$corrected,'preserved'=>$preserved,'checks'=>[]]);exit(0);}
+if($command==='ikontrol:settings-baseline'){$file=$root.'/writable/settings.json';$settings=is_file($file)?json_decode(file_get_contents($file),true):[];$baseline=__BASELINE__;$created=[];$corrected=[];$preserved=[];foreach($baseline as$k=>$v){if(!array_key_exists($k,$settings)){$settings[$k]=$v;$created[]=$k;}elseif((in_array($k,['site_logo','favicon'],true)&&in_array($settings[$k],['b:0;','N;'],true))||(in_array($k,['timezone','item_purchase_code'],true)&&trim($settings[$k])==='')){$settings[$k]=$v;$corrected[]=$k;}else$preserved[]=$k;}file_put_contents($file,json_encode($settings));$json(['status'=>'READY','created'=>$created,'corrected'=>$corrected,'preserved'=>$preserved,'checks'=>[]]);exit(0);}
 if($command==='migrate:status'){echo "Migration  Batch  Status\n001  1  up\n";exit(0);}
 if($command==='ikontrol:logging-status'){$json(['status'=>'OK','threshold'=>4,'writable'=>true]);exit(0);}
 if($command==='ikontrol:log-check'){$dir=$root.'/writable/logs';@mkdir($dir,0775,true);$file=$dir.'/log-sandbox.log';file_put_contents($file,"ERROR - IKONTROL_ADMIN_LOG_CHECK\n",FILE_APPEND);$json(['status'=>'READY','test_file_created'=>true,'test_file'=>'log-sandbox.log','logger_threshold'=>4]);exit(0);}
@@ -135,5 +144,6 @@ if($command==='ikontrol:admin-diagnose'){$admin=is_file($root.'/writable/admin.j
 if($command==='ikontrol:dashboard-check'){$admin=is_file($root.'/writable/admin.json');$settings=is_file($root.'/writable/settings.json');$json(['status'=>$admin&&$settings?'READY':'FAILED','reason'=>$settings?null:'SETTING_MISSING','checks'=>['settings_table'=>true,'settings_baseline'=>$settings,'dashboard_baseline'=>$admin]]);exit(0);}
 exit(1);
 PHP;
+        return str_replace('__BASELINE__',var_export(array_merge(...array_values(config('ikontrol.deployment.settings_baseline'))),true),$source);
     }
 }
