@@ -96,6 +96,30 @@ PHP);
         $deployment->installOperationalCommandsFor($this->instance);
     }
 
+    public function test_written_command_files_are_not_reported_successful_when_spark_does_not_discover_them(): void
+    {
+        File::put($this->instance->absolute_path.'/spark', <<<'PHP'
+<?php
+if (($argv[1] ?? '') === 'list') {
+    echo 'CodeIgniter commands';
+    exit(0);
+}
+exit(1);
+PHP);
+
+        try {
+            app(IkontrolDeploymentService::class)->installOperationalCommandsFor($this->instance);
+            $this->fail('La instalación no debió declararse exitosa.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('MANAGED_COMMAND_DISCOVERY', $exception->getMessage());
+            $this->assertStringContainsString('file=YES', $exception->getMessage());
+            $this->assertStringContainsString('hash=OK', $exception->getMessage());
+            $this->assertStringContainsString('discovery=NO', $exception->getMessage());
+        }
+
+        $this->assertFileExists($this->instance->absolute_path.'/app/Commands/IkontrolLogCheck.php');
+    }
+
     public function test_writable_repair_rejects_instance_path_outside_root(): void
     {
         $this->instance->absolute_path = dirname($this->root);

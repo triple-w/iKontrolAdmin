@@ -30,8 +30,8 @@ class InstanceComprehensiveDiagnosticService
         $logging = $this->command($instance, 'ikontrol:logging-status');
         $migrations = $this->migrations($instance);
         $http = $this->http($instance);
-        $admin = $email ? $this->diagnosticCommand($instance, 'ikontrol:admin-diagnose', $email) : ['status' => 'NOT_CHECKED'];
-        $dashboard = $email ? $this->diagnosticCommand($instance, 'ikontrol:dashboard-check', $email) : ['status' => 'NOT_CHECKED'];
+        $admin = $email ? $this->diagnosticCommand($instance, 'ikontrol:admin-diagnose', $email, data_get($commands,'managed.ikontrol:admin-diagnose')==='AVAILABLE') : ['status' => 'NOT_CHECKED'];
+        $dashboard = $email ? $this->diagnosticCommand($instance, 'ikontrol:dashboard-check', $email, data_get($commands,'managed.ikontrol:dashboard-check')==='AVAILABLE') : ['status' => 'NOT_CHECKED'];
         unset($filesystem['safe_path']);
 
         $checks = compact('filesystem', 'environment', 'commands', 'database', 'applicationDatabase', 'logging', 'migrations', 'http', 'admin', 'dashboard');
@@ -109,7 +109,7 @@ class InstanceComprehensiveDiagnosticService
     private function commands(IkontrolInstance $instance): array
     {
         $result = $this->rawCommand($instance, 'list');
-        if (! $result['success']) return ['status' => 'FAILED', 'managed' => array_fill_keys(self::MANAGED_COMMANDS, 'UNKNOWN')];
+        if (! $result['success']) return ['status'=>'FAILED','reason'=>'COMMAND_EXECUTION_FAILED','managed'=>array_fill_keys(self::MANAGED_COMMANDS,'UNKNOWN'),'runner'=>$result['runner']];
         $managed = [];
         foreach (self::MANAGED_COMMANDS as $command) $managed[$command] = str_contains($result['output'], $command) ? 'AVAILABLE' : 'MISSING_MANAGED_COMMAND';
         return ['status' => in_array('MISSING_MANAGED_COMMAND', $managed, true) ? 'WARNING' : 'OK', 'managed' => $managed];
@@ -158,18 +158,22 @@ class InstanceComprehensiveDiagnosticService
         return is_array($json) ? $this->sanitize($json) : ['status' => 'OK'];
     }
 
-    private function diagnosticCommand(IkontrolInstance $instance, string $command, string $email): array
+    private function diagnosticCommand(IkontrolInstance $instance,string $command,string $email,bool$discovered):array
     {
+        if(!$discovered)return['status'=>'FAILED','command_discovered'=>false,'execution'=>'NOT_RUN','reason'=>'COMMAND_NOT_FOUND'];
         try {
             $result = $this->deployment->runInstalledDiagnosticCommand($instance, $command, strtolower(trim($email)));
-            $json = json_decode(trim((string) ($result['output'] ?? '')), true);
-            return ($result['exit_code'] ?? 1) === 0 && is_array($json) ? $this->sanitize($json) : ['status' => 'FAILED'];
-        } catch (Throwable) {return ['status' => 'FAILED'];}
+            $stdout=trim((string)($result['stdout']??$result['output']??''));
+            if(($result['exit_code']??1)!==0)return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>'COMMAND_EXECUTION_FAILED','runner'=>$this->runnerContext($result)];
+            $json=json_decode($stdout,true);
+            if(!is_array($json))return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>'INVALID_JSON','runner'=>$this->runnerContext($result)];
+            return['command_discovered'=>true,'execution'=>'READY']+$this->sanitize($json)+['reason'=>$json['reason']??null,'runner'=>$this->runnerContext($result)];
+        }catch(Throwable $e){return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>$this->exceptionReason($e)];}
     }
 
     private function rawCommand(IkontrolInstance $instance, string $command): array
     {
-        try {$result = $this->deployment->runTemplateCommand($instance, $command);return ['success' => ($result['exit_code'] ?? 1) === 0, 'output' => (string) ($result['output'] ?? '')];} catch (Throwable) {return ['success' => false, 'output' => ''];}
+        try{$result=$this->deployment->runTemplateCommand($instance,$command);return['success'=>($result['exit_code']??1)===0,'output'=>(string)($result['stdout']??$result['output']??''),'runner'=>$this->runnerContext($result)];}catch(Throwable){return['success'=>false,'output'=>'','runner'=>['exit_code'=>null,'reason'=>'UNKNOWN_FAILURE']];}
     }
 
     private function recommendations(array $checks): array
@@ -220,5 +224,7 @@ class InstanceComprehensiveDiagnosticService
     }
 
     private function match(string $expected, ?string $actual): string {return $actual !== null && hash_equals($expected, $actual) ? 'MATCH' : 'MISMATCH';}
+    private function runnerContext(array$r):array{return['cwd'=>$r['cwd']??null,'php_binary'=>$r['php_binary']??null,'exit_code'=>$r['exit_code']??null,'stdout_tail'=>$r['stdout_tail']??null,'stderr_tail'=>$r['stderr_tail']??null];}
+    private function exceptionReason(Throwable $e):string{foreach(['COMMAND_NOT_FOUND','COMMAND_EXECUTION_FAILED','INVALID_JSON','USER_NOT_FOUND','ROLE_MISSING','TEAM_MEMBER_INFO_MISSING','INACTIVE','PERMISSIONS_MISSING','TABLE_MISSING','SETTING_MISSING','DASHBOARD_MISSING','WIDGET_CONFIG_MISSING','ADMIN_INVALID']as$reason)if(str_contains(strtoupper($e->getMessage()),$reason))return$reason;return'UNKNOWN_FAILURE';}
     private function sanitize(array $data): array {$json = json_encode($data);foreach ([(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')] as $secret) if ($secret !== '') $json = str_replace($secret, '[REDACTED]', $json);$json = preg_replace('/("?(?:password|token|secret|authorization|encryption\.key)"?\s*:\s*)"[^"]*"/i', '$1"[REDACTED]"', $json) ?? '{}';return json_decode($json, true) ?: [];}
 }
