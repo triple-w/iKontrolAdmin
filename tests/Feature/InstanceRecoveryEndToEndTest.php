@@ -68,6 +68,12 @@ class InstanceRecoveryEndToEndTest extends TestCase
 
         $tools = $diagnostics->installTools($instance);
         $this->assertSame('SPARK_DISCOVERY_AND_JSON_PROTOCOL_OK', $tools['verification_result']);
+        $baselineCommand = File::get($instance->absolute_path.'/app/Commands/IkontrolSettingsBaseline.php');
+        $this->assertStringContainsString("setting_name,setting_value,type,deleted", $baselineCommand);
+        $this->assertStringNotContainsString("select('id", $baselineCommand);
+        $this->assertStringNotContainsString("where('id'", $baselineCommand);
+        $this->assertStringContainsString("where('setting_name'", $baselineCommand);
+        $this->assertStringContainsString('if($value===null)return \'\'', $baselineCommand);
         $operations = new IkontrolInstanceOperationsService($deployment, $connection, $cpanel, app(AuditService::class), app(InstanceFilesystemService::class), $provisioning);
         File::put($instance->absolute_path.'/writable/admin.json', json_encode(['email'=>'admin@sandbox.test','profile'=>false]));
         $this->assertSame('FAILED', app(\App\Services\InstanceRuntimeDiagnosticService::class)->diagnoseAdmin($instance, 'admin@sandbox.test')['status']);
@@ -78,6 +84,8 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $settings=json_decode(File::get($settingsPath),true);
         $expectedBaseline=array_merge(...array_values(config('ikontrol.deployment.settings_baseline')));
         $this->assertCount(count($expectedBaseline),$settings);
+        $this->assertNotEmpty($expectedBaseline);
+        foreach($expectedBaseline as $name=>$value)$this->assertNotNull($value, 'Baseline null: '.$name);
         foreach(config('ikontrol.deployment.settings_secret_keys') as $secretKey)$this->assertArrayNotHasKey($secretKey,$settings);
         foreach(config('ikontrol.deployment.settings_baseline.module_default') as $name=>$value)$this->assertSame($value,$settings[$name]);
         $this->assertSame('America/Mexico_City',$settings['timezone']);
@@ -85,7 +93,7 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $this->assertSame('',$settings['site_logo']);
         $this->assertSame('',$settings['favicon']);
         $this->assertSame('CLEAN-LOCAL-NOT-LICENSED',$settings['item_purchase_code']);
-        $settings['default_currency']='USD'; $settings['site_logo']='b:0;'; $settings['favicon']='b:0;'; $settings['item_purchase_code']=''; unset($settings['timezone']);
+        $settings['default_currency']='USD'; $settings['site_logo']='b:0;'; $settings['favicon']='N;'; $settings['item_purchase_code']=''; unset($settings['timezone']);
         File::put($settingsPath,json_encode($settings));
         $deployment->repairTemplateSettings($instance);
         $repaired=json_decode(File::get($settingsPath),true);
@@ -94,6 +102,10 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $this->assertSame('CLEAN-LOCAL-NOT-LICENSED',$repaired['item_purchase_code']);
         $this->assertSame('America/Mexico_City',$repaired['timezone']);
         $this->assertSame($repaired,json_decode(File::get($settingsPath),true));
+        $second = $deployment->repairTemplateSettings($instance);
+        $this->assertSame([], $second['created']);
+        $this->assertSame([], $second['corrected']);
+        $this->assertCount(count($expectedBaseline), json_decode(File::get($settingsPath), true));
 
         $log = app(InstanceLogService::class);
         $runtime = app(\App\Services\InstanceRuntimeDiagnosticService::class);
