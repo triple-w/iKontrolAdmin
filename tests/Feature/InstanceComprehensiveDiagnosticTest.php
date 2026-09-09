@@ -35,6 +35,8 @@ if($command==='list'){
  foreach(glob(__DIR__.'/app/Commands/*.php')?:[] as$file){$code=file_get_contents($file);if(preg_match_all('/ikontrol:[a-z:-]+/',$code,$matches))foreach(array_unique($matches[0])as$name)echo $name.PHP_EOL;}
  exit(0);
 }
+if($command==='ikontrol:database-check'){echo "IKONTROL_JSON_BEGIN\n{\"status\":\"READY\"}\nIKONTROL_JSON_END\n";exit(0);}
+if($command==='ikontrol:log-check'){echo "IKONTROL_JSON_BEGIN\n{\"status\":\"FAILED\",\"reason\":\"LOGGER_DISABLED\"}\nIKONTROL_JSON_END\n";exit(0);}
 exit(1);
 PHP);
         $this->instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_template_id' => $template->id, 'name' => 'General', 'slug' => 'general', 'folder_name' => 'general.ikontrol.solutions', 'absolute_path' => $path, 'url' => 'https://general.ikontrol.solutions/', 'db_name' => 'general_db', 'installation_status' => InstallationStatus::Failed]);

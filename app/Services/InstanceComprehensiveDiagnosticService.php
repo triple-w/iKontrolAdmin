@@ -57,7 +57,7 @@ class InstanceComprehensiveDiagnosticService
         $after = $this->commands($instance);
         if ($after['status'] !== 'OK') throw new RuntimeException('Diagnóstico falló en MANAGED_COMMAND_DISCOVERY: Spark no descubrió todas las herramientas administradas.');
         $this->audit->record('install_instance_diagnostic_tools', 'Herramientas administradas de diagnóstico instaladas.', $instance, ['version' => config('ikontrol.deployment.diagnostic_tools_version')]);
-        return ['action' => 'INSTALL_DIAGNOSTIC_TOOLS', 'before_status' => $before, 'action_result' => $result['action_result'], 'verification_result' => 'SPARK_DISCOVERY_OK', 'after_status' => 'READY'];
+        return ['action' => 'INSTALL_DIAGNOSTIC_TOOLS', 'before_status' => $before, 'action_result' => $result['action_result'], 'verification_result' => $result['verification_result'] ?? 'SPARK_DISCOVERY_OK', 'after_status' => 'READY'];
     }
 
     public function repairWritable(IkontrolInstance $instance): array
@@ -154,8 +154,7 @@ class InstanceComprehensiveDiagnosticService
     {
         $result = $this->rawCommand($instance, $command);
         if (! $result['success']) return ['status' => 'FAILED'];
-        $json = json_decode(trim($result['output']), true);
-        return is_array($json) ? $this->sanitize($json) : ['status' => 'OK'];
+        try{return$this->sanitize(app(ManagedCommandJsonProtocol::class)->decodeProcess($result['process']));}catch(Throwable){return['status'=>'FAILED','reason'=>'INVALID_JSON','runner'=>$result['runner']];}
     }
 
     private function diagnosticCommand(IkontrolInstance $instance,string $command,string $email,bool$discovered):array
@@ -163,17 +162,15 @@ class InstanceComprehensiveDiagnosticService
         if(!$discovered)return['status'=>'FAILED','command_discovered'=>false,'execution'=>'NOT_RUN','reason'=>'COMMAND_NOT_FOUND'];
         try {
             $result = $this->deployment->runInstalledDiagnosticCommand($instance, $command, strtolower(trim($email)));
-            $stdout=trim((string)($result['stdout']??$result['output']??''));
             if(($result['exit_code']??1)!==0)return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>'COMMAND_EXECUTION_FAILED','runner'=>$this->runnerContext($result)];
-            $json=json_decode($stdout,true);
-            if(!is_array($json))return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>'INVALID_JSON','runner'=>$this->runnerContext($result)];
+            $json=app(ManagedCommandJsonProtocol::class)->decodeProcess($result);
             return['command_discovered'=>true,'execution'=>'READY']+$this->sanitize($json)+['reason'=>$json['reason']??null,'runner'=>$this->runnerContext($result)];
         }catch(Throwable $e){return['status'=>'FAILED','command_discovered'=>true,'execution'=>'FAILED','reason'=>$this->exceptionReason($e)];}
     }
 
     private function rawCommand(IkontrolInstance $instance, string $command): array
     {
-        try{$result=$this->deployment->runTemplateCommand($instance,$command);return['success'=>($result['exit_code']??1)===0,'output'=>(string)($result['stdout']??$result['output']??''),'runner'=>$this->runnerContext($result)];}catch(Throwable){return['success'=>false,'output'=>'','runner'=>['exit_code'=>null,'reason'=>'UNKNOWN_FAILURE']];}
+        try{$result=$this->deployment->runTemplateCommand($instance,$command);return['success'=>($result['exit_code']??1)===0,'output'=>(string)($result['stdout']??$result['output']??''),'runner'=>$this->runnerContext($result),'process'=>$result];}catch(Throwable){return['success'=>false,'output'=>'','runner'=>['exit_code'=>null,'reason'=>'UNKNOWN_FAILURE'],'process'=>[]];}
     }
 
     private function recommendations(array $checks): array

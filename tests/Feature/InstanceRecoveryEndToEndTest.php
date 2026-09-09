@@ -63,7 +63,7 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $this->assertContains('MANAGED_COMMANDS_MISSING', array_column($before->recommendations, 'code'));
 
         $tools = $diagnostics->installTools($instance);
-        $this->assertSame('SPARK_DISCOVERY_OK', $tools['verification_result']);
+        $this->assertSame('SPARK_DISCOVERY_AND_JSON_PROTOCOL_OK', $tools['verification_result']);
         $operations = new IkontrolInstanceOperationsService($deployment, $connection, $cpanel, app(AuditService::class), app(InstanceFilesystemService::class), $provisioning);
         $admin = $operations->provisionAdmin($instance, 'Sandbox Admin', 'admin@sandbox.test', 'SafeSandboxPassword!');
         $this->assertSame('ADMIN_DIAGNOSE_READY', $admin['verification_result']);
@@ -102,15 +102,18 @@ class InstanceRecoveryEndToEndTest extends TestCase
         return <<<'PHP'
 <?php
 $command=$argv[1]??'list';$root=__DIR__;
+echo "CodeIgniter v4.6.1 Command Line Tool - Server Time: 2026-09-09 12:00:00 UTC\n";
+$json=function(array$data){echo "IKONTROL_JSON_BEGIN\n".json_encode($data)."\nIKONTROL_JSON_END\n";};
 if($command==='list'){foreach(glob($root.'/app/Commands/*.php')?:[]as$file){preg_match_all('/ikontrol:[a-z:-]+/',file_get_contents($file),$m);foreach(array_unique($m[0])as$name)echo $name.PHP_EOL;}exit(0);}
 if($command==='key:generate'){file_put_contents($root.'/.env',"encryption.key = 'sandbox-key'\n",FILE_APPEND);echo "KEY_GENERATED\n";exit(0);}
-if(in_array($command,['cache:clear','migrate','ikontrol:database-check'],true)){echo $command==='ikontrol:database-check'?'{"status":"OK"}':'OK';exit(0);}
+if(in_array($command,['cache:clear','migrate'],true)){echo 'OK';exit(0);}
+if($command==='ikontrol:database-check'){$json(['status'=>'READY']);exit(0);}
 if($command==='migrate:status'){echo "Migration  Batch  Status\n001  1  up\n";exit(0);}
-if($command==='ikontrol:logging-status'){echo '{"status":"OK","threshold":4,"writable":true}';exit(0);}
-if($command==='ikontrol:log-check'){$dir=$root.'/writable/logs';@mkdir($dir,0775,true);$file=$dir.'/log-sandbox.log';file_put_contents($file,"ERROR - IKONTROL_ADMIN_LOG_CHECK\n",FILE_APPEND);echo '{"status":"READY","test_file_created":true,"test_file":"log-sandbox.log","logger_threshold":4}';exit(0);}
+if($command==='ikontrol:logging-status'){$json(['status'=>'OK','threshold'=>4,'writable'=>true]);exit(0);}
+if($command==='ikontrol:log-check'){$dir=$root.'/writable/logs';@mkdir($dir,0775,true);$file=$dir.'/log-sandbox.log';file_put_contents($file,"ERROR - IKONTROL_ADMIN_LOG_CHECK\n",FILE_APPEND);$json(['status'=>'READY','test_file_created'=>true,'test_file'=>'log-sandbox.log','logger_threshold'=>4]);exit(0);}
 if($command==='ikontrol:admin-provision'){$password=trim(stream_get_contents(STDIN));if(strlen($password)<12)exit(2);file_put_contents($root.'/writable/admin.json',json_encode(['email'=>strtolower($argv[3]),'profile'=>true]));echo 'ADMIN_CREATED';exit(0);}
-if($command==='ikontrol:admin-diagnose'){$admin=is_file($root.'/writable/admin.json')?json_decode(file_get_contents($root.'/writable/admin.json'),true):null;$ready=$admin&&$admin['email']===strtolower($argv[2])&&$admin['profile'];echo json_encode(['status'=>$ready?'READY':'FAILED','user_exists'=>(bool)$admin,'role_ok'=>$ready,'profile_ok'=>$ready]);exit(0);}
-if($command==='ikontrol:dashboard-check'){$admin=is_file($root.'/writable/admin.json');echo json_encode(['status'=>$admin?'READY':'FAILED','checks'=>['settings_table'=>true,'dashboard_baseline'=>$admin]]);exit(0);}
+if($command==='ikontrol:admin-diagnose'){$admin=is_file($root.'/writable/admin.json')?json_decode(file_get_contents($root.'/writable/admin.json'),true):null;$ready=$admin&&$admin['email']===strtolower($argv[2])&&$admin['profile'];$json(['status'=>$ready?'READY':'FAILED','user_exists'=>(bool)$admin,'role_ok'=>$ready,'profile_ok'=>$ready]);exit(0);}
+if($command==='ikontrol:dashboard-check'){$admin=is_file($root.'/writable/admin.json');$json(['status'=>$admin?'READY':'FAILED','checks'=>['settings_table'=>true,'dashboard_baseline'=>$admin]]);exit(0);}
 exit(1);
 PHP;
     }

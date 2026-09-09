@@ -26,7 +26,7 @@ return [
     'deployment' => [
         'command_timeout' => (int) env('IKONTROL_DEPLOYMENT_TIMEOUT', 300),
         'php_binary' => env('IKONTROL_PHP_BINARY', PHP_BINARY),
-        'diagnostic_tools_version' => '1.0.0',
+        'diagnostic_tools_version' => '1.1.0',
         // Contracts are keyed by the template schema_version. Undefined schemas are reported, never guessed.
         'schema_tables' => [
             'rise-administrative-baseline-1' => ['users', 'roles', 'team', 'settings', 'dashboards', 'custom_widgets'],

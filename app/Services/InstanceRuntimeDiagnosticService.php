@@ -10,6 +10,7 @@ class InstanceRuntimeDiagnosticService
     public function __construct(
         private IkontrolDeploymentService $deployment,
         private AuditService $audit,
+        private ?ManagedCommandJsonProtocol $jsonProtocol = null,
     ) {}
 
     public function loggingStatus(IkontrolInstance $instance): array
@@ -19,7 +20,7 @@ class InstanceRuntimeDiagnosticService
 
     public function generateTestLog(IkontrolInstance $instance): array
     {
-        try{$result=$this->runJson($instance,'ikontrol:log-check');}catch(RuntimeException$e){throw new RuntimeException('COMMAND_EXECUTION_FAILED: '.$e->getMessage());}
+        $result = $this->runJson($instance, 'ikontrol:log-check');
         if (! in_array($result['status'] ?? null, ['READY', 'SUCCESS'], true) || ! ($result['test_file_created'] ?? $result['written'] ?? false)) {
             $reason=$result['reason']??(($result['logger_threshold']??null)===0?'LOGGER_DISABLED':'FILE_NOT_CREATED');throw new RuntimeException($reason.': el logger no produjo evidencia de escritura.');
         }
@@ -70,11 +71,7 @@ class InstanceRuntimeDiagnosticService
 
     private function decode(array $process): array
     {
-        $stdout=trim((string)($process['stdout']??$process['output']??''));
-        if(($process['exit_code']??1)!==0)throw new RuntimeException('COMMAND_EXECUTION_FAILED (exit '.($process['exit_code']??'unknown').'): '.mb_substr((string)($process['stderr_tail']??'sin stderr'),0,300));
-        $decoded=json_decode($stdout,true);if(!is_array($decoded))throw new RuntimeException('INVALID_JSON: el comando no devolvió JSON válido por stdout.');
-
-        return $decoded;
+        return ($this->jsonProtocol ?? app(ManagedCommandJsonProtocol::class))->decodeProcess($process);
     }
 
     private function runnerContext(array $process): array
