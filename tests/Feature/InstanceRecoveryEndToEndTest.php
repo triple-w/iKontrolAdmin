@@ -59,8 +59,7 @@ class InstanceRecoveryEndToEndTest extends TestCase
         Http::fake(['*' => Http::response('', 200, ['Content-Type' => 'text/html'])]);
         $diagnostics = new InstanceComprehensiveDiagnosticService($connection, $deployment, app(AuditService::class));
         $before = $diagnostics->diagnose($instance);
-        $this->assertSame('WARNING', $before->status);
-        $this->assertContains('MANAGED_COMMANDS_MISSING', array_column($before->recommendations, 'code'));
+        $this->assertSame('HEALTHY', $before->status);
 
         $tools = $diagnostics->installTools($instance);
         $this->assertSame('SPARK_DISCOVERY_AND_JSON_PROTOCOL_OK', $tools['verification_result']);
@@ -70,6 +69,22 @@ class InstanceRecoveryEndToEndTest extends TestCase
         $admin = $operations->provisionAdmin($instance, 'Sandbox Admin', 'admin@sandbox.test', 'SafeSandboxPassword!');
         $this->assertSame('ADMIN_AND_DASHBOARD_READY', $admin['verification_result']);
         $this->assertStringContainsString('logger.threshold = 4', File::get($instance->absolute_path.'/.env'));
+        $settingsPath=$instance->absolute_path.'/writable/settings.json';
+        $settings=json_decode(File::get($settingsPath),true);
+        $this->assertSame('America/Mexico_City',$settings['timezone']);
+        $this->assertSame('spanish',$settings['language']);
+        $this->assertSame('',$settings['site_logo']);
+        $this->assertSame('',$settings['favicon']);
+        $this->assertSame('CLEAN-LOCAL-NOT-LICENSED',$settings['item_purchase_code']);
+        $settings['default_currency']='USD'; $settings['site_logo']='b:0;'; $settings['favicon']='b:0;'; $settings['item_purchase_code']=''; unset($settings['timezone']);
+        File::put($settingsPath,json_encode($settings));
+        $deployment->repairTemplateSettings($instance);
+        $repaired=json_decode(File::get($settingsPath),true);
+        $this->assertSame('USD',$repaired['default_currency'],'Un valor personalizado válido debe conservarse.');
+        $this->assertSame('',$repaired['site_logo']); $this->assertSame('',$repaired['favicon']);
+        $this->assertSame('CLEAN-LOCAL-NOT-LICENSED',$repaired['item_purchase_code']);
+        $this->assertSame('America/Mexico_City',$repaired['timezone']);
+        $this->assertSame($repaired,json_decode(File::get($settingsPath),true));
 
         $log = app(InstanceLogService::class);
         $runtime = app(\App\Services\InstanceRuntimeDiagnosticService::class);
@@ -111,12 +126,13 @@ if($command==='list'){foreach(glob($root.'/app/Commands/*.php')?:[]as$file){preg
 if($command==='key:generate'){file_put_contents($root.'/.env',"encryption.key = 'sandbox-key'\n",FILE_APPEND);echo "KEY_GENERATED\n";exit(0);}
 if(in_array($command,['cache:clear','migrate'],true)){echo 'OK';exit(0);}
 if($command==='ikontrol:database-check'){$json(['status'=>'READY']);exit(0);}
+if($command==='ikontrol:settings-baseline'){$file=$root.'/writable/settings.json';$settings=is_file($file)?json_decode(file_get_contents($file),true):[];$baseline=['timezone'=>'America/Mexico_City','language'=>'spanish','date_format'=>'Y-m-d','time_format'=>'small','first_day_of_week'=>'0','weekends'=>'','default_currency'=>'MXN','currency_symbol'=>'$','currency_position'=>'left','decimal_separator'=>'.','no_of_decimals'=>'2','accepted_file_formats'=>'jpg,jpeg,png,doc,xlsx,txt,pdf,zip,webm','site_logo'=>'','favicon'=>'','item_purchase_code'=>'CLEAN-LOCAL-NOT-LICENSED'];$created=[];$corrected=[];$preserved=[];foreach($baseline as$k=>$v){if(!array_key_exists($k,$settings)){$settings[$k]=$v;$created[]=$k;}elseif((in_array($k,['site_logo','favicon'],true)&&in_array($settings[$k],['b:0;','N;'],true))||(in_array($k,['timezone','item_purchase_code'],true)&&trim($settings[$k])==='')){$settings[$k]=$v;$corrected[]=$k;}else$preserved[]=$k;}file_put_contents($file,json_encode($settings));$json(['status'=>'READY','created'=>$created,'corrected'=>$corrected,'preserved'=>$preserved,'checks'=>[]]);exit(0);}
 if($command==='migrate:status'){echo "Migration  Batch  Status\n001  1  up\n";exit(0);}
 if($command==='ikontrol:logging-status'){$json(['status'=>'OK','threshold'=>4,'writable'=>true]);exit(0);}
 if($command==='ikontrol:log-check'){$dir=$root.'/writable/logs';@mkdir($dir,0775,true);$file=$dir.'/log-sandbox.log';file_put_contents($file,"ERROR - IKONTROL_ADMIN_LOG_CHECK\n",FILE_APPEND);$json(['status'=>'READY','test_file_created'=>true,'test_file'=>'log-sandbox.log','logger_threshold'=>4]);exit(0);}
 if($command==='ikontrol:admin-provision'){$password=trim(stream_get_contents(STDIN));if(strlen($password)<12)exit(2);file_put_contents($root.'/writable/admin.json',json_encode(['email'=>strtolower($argv[3]),'profile'=>true]));echo 'ADMIN_CREATED';exit(0);}
 if($command==='ikontrol:admin-diagnose'){$admin=is_file($root.'/writable/admin.json')?json_decode(file_get_contents($root.'/writable/admin.json'),true):null;$ready=$admin&&$admin['email']===strtolower($argv[2])&&$admin['profile'];$json(['status'=>$ready?'READY':'FAILED','user_exists'=>(bool)$admin,'role_ok'=>$ready,'profile_ok'=>$ready]);exit(0);}
-if($command==='ikontrol:dashboard-check'){$admin=is_file($root.'/writable/admin.json');$json(['status'=>$admin?'READY':'FAILED','checks'=>['settings_table'=>true,'dashboard_baseline'=>$admin]]);exit(0);}
+if($command==='ikontrol:dashboard-check'){$admin=is_file($root.'/writable/admin.json');$settings=is_file($root.'/writable/settings.json');$json(['status'=>$admin&&$settings?'READY':'FAILED','reason'=>$settings?null:'SETTING_MISSING','checks'=>['settings_table'=>true,'settings_baseline'=>$settings,'dashboard_baseline'=>$admin]]);exit(0);}
 exit(1);
 PHP;
     }

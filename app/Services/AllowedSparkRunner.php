@@ -12,6 +12,7 @@ class AllowedSparkRunner
         'cache:clear' => [], 'logs:clear' => ['--force'], 'migrate' => [],
         'ikontrol:database-check' => [], 'ikontrol:stamps-status' => [],
         'ikontrol:logging-status' => [], 'ikontrol:log-check' => [],
+        'ikontrol:settings-baseline' => [],
     ];
 
     public function run(string $path, string $command, array $arguments = []): array

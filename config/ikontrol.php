@@ -26,7 +26,24 @@ return [
     'deployment' => [
         'command_timeout' => (int) env('IKONTROL_DEPLOYMENT_TIMEOUT', 300),
         'php_binary' => env('IKONTROL_PHP_BINARY', PHP_BINARY),
-        'diagnostic_tools_version' => '1.2.0',
+        'diagnostic_tools_version' => '1.3.0',
+        'settings_baseline' => [
+            'timezone' => 'America/Mexico_City',
+            'language' => 'spanish',
+            'date_format' => 'Y-m-d',
+            'time_format' => 'small',
+            'first_day_of_week' => '0',
+            'weekends' => '',
+            'default_currency' => 'MXN',
+            'currency_symbol' => '$',
+            'currency_position' => 'left',
+            'decimal_separator' => '.',
+            'no_of_decimals' => '2',
+            'accepted_file_formats' => 'jpg,jpeg,png,doc,xlsx,txt,pdf,zip,webm',
+            'site_logo' => '',
+            'favicon' => '',
+            'item_purchase_code' => 'CLEAN-LOCAL-NOT-LICENSED',
+        ],
         // Contracts are keyed by the template schema_version. Undefined schemas are reported, never guessed.
         'schema_tables' => [
             'rise-administrative-baseline-1' => ['users', 'roles', 'team', 'settings', 'dashboards', 'custom_widgets'],

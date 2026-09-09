@@ -168,6 +168,7 @@ class InstanceProvisioningService
             [S::DeployingFiles, fn () => $deployment->deployTemplate($instance, $template)],
             [S::ImportingDatabaseTemplate, fn () => $database->import($instance, $template)],
             [S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance)],
+            [S::CreatingEnv, fn () => $deployment->repairTemplateSettings($instance)],
             [S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance)],
             [S::ClearingCache, fn () => $this->templateCommand($deployment, $instance, 'cache:clear', [])],
             [S::RunningMigrations, fn () => $this->templateCommand($deployment, $instance, 'migrate', [])],
@@ -181,6 +182,7 @@ class InstanceProvisioningService
         $deployment = $this->deployment ?? app(IkontrolDeploymentService::class);
         try {
             $this->step($instance, S::CreatingEnv, fn () => $deployment->createTemplateEnvironment($instance));
+            $this->step($instance, S::CreatingEnv, fn () => $deployment->repairTemplateSettings($instance));
             $this->step($instance, S::GeneratingAppKey, fn () => $this->ensureTemplateKey($deployment, $instance));
             $this->step($instance, S::VerifyingApplicationDatabase, fn () => $this->templateCommand($deployment, $instance, 'ikontrol:database-check', []));
             $instance->update(['installation_status'=>S::ReadyForDomain]);

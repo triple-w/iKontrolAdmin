@@ -26,7 +26,7 @@ class TemplateEnvironmentAndRepairTest extends TestCase
     public function test_template_environment_uses_codeigniter_format_and_root_document_root(): void
     {
         $instance=$this->makeInstance(); $deployment=$this->deployment(); $result=$deployment->createTemplateEnvironment($instance); $env=File::get($instance->absolute_path.'/.env');
-        foreach (["CI_ENVIRONMENT = production","logger.threshold = 4","app.baseURL = 'https://ikontrol.ikontrol.solutions/'","database.default.hostname = 'localhost'","database.default.database = 'test_ikontrol'","database.default.username = 'global_user'","database.default.password = 'global-secret'","database.default.DBDriver = MySQLi","database.default.DBPrefix = 'ikontrol_'","database.default.port = 3307"] as $line) $this->assertStringContainsString($line,$env);
+        foreach (["CI_ENVIRONMENT = production","logger.threshold = 4","fiscal.runtimeMode = integration","fiscal.enabled = false","fiscal.pacAdapter = timbradorxpress","app.baseURL = 'https://ikontrol.ikontrol.solutions/'","database.default.hostname = 'localhost'","database.default.database = 'test_ikontrol'","database.default.username = 'global_user'","database.default.password = 'global-secret'","database.default.DBDriver = MySQLi","database.default.DBPrefix = 'ikontrol_'","database.default.port = 3307"] as $line) $this->assertStringContainsString($line,$env);
         foreach (['APP_ENV','APP_DEBUG','APP_URL','APP_KEY','DB_CONNECTION','DB_HOST','DB_DATABASE','DB_USERNAME','DB_PASSWORD'] as $legacy) $this->assertStringNotContainsString($legacy,$env);
         $this->assertSame(realpath($instance->absolute_path),$result['document_root']); $this->assertSame(realpath($instance->absolute_path),$deployment->templateDocumentRoot($instance));
         if (PHP_OS_FAMILY !== 'Windows') $this->assertSame(0600,fileperms($instance->absolute_path.'/.env') & 0777); else $this->assertFileExists($instance->absolute_path.'/.env');
@@ -42,7 +42,7 @@ class TemplateEnvironmentAndRepairTest extends TestCase
     public function test_repair_checks_database_without_touching_database_or_template_sql(): void
     {
         $instance=$this->makeInstance(); $deployment=Mockery::mock(IkontrolDeploymentService::class);
-        $deployment->shouldReceive('createTemplateEnvironment')->once()->with($instance)->andReturn(['encryption_key_present'=>true]); $deployment->shouldReceive('templateHasEncryptionKey')->once()->andReturn(true); $deployment->shouldReceive('runTemplateCommand')->once()->with($instance,'ikontrol:database-check',[])->andReturn(['exit_code'=>0,'output'=>'CONNECTED']);
+        $deployment->shouldReceive('createTemplateEnvironment')->once()->with($instance)->andReturn(['encryption_key_present'=>true]); $deployment->shouldReceive('repairTemplateSettings')->once()->with($instance)->andReturn(['status'=>'READY']); $deployment->shouldReceive('templateHasEncryptionKey')->once()->andReturn(true); $deployment->shouldReceive('runTemplateCommand')->once()->with($instance,'ikontrol:database-check',[])->andReturn(['exit_code'=>0,'output'=>'CONNECTED']);
         $cpanel=Mockery::mock(CpanelService::class); $cpanel->shouldNotReceive('createDatabase'); $cpanel->shouldNotReceive('assignUserToDatabase');
         $database=Mockery::mock(IkontrolDatabaseTemplateService::class); $database->shouldNotReceive('import');
         $service=new InstanceProvisioningService($cpanel,Mockery::mock(InstanceFilesystemService::class),Mockery::mock(IkontrolInstanceConnectionService::class),app(AuditService::class),$deployment,null,$database);
@@ -53,7 +53,7 @@ class TemplateEnvironmentAndRepairTest extends TestCase
     public function test_repair_fails_when_codeigniter_database_check_fails(): void
     {
         $instance=$this->makeInstance(); $deployment=Mockery::mock(IkontrolDeploymentService::class);
-        $deployment->shouldReceive('createTemplateEnvironment')->andReturn([]); $deployment->shouldReceive('templateHasEncryptionKey')->andReturn(true); $deployment->shouldReceive('runTemplateCommand')->with($instance,'ikontrol:database-check',[])->andReturn(['exit_code'=>1,'output'=>'ERROR']);
+        $deployment->shouldReceive('createTemplateEnvironment')->andReturn([]); $deployment->shouldReceive('repairTemplateSettings')->andReturn(['status'=>'READY']); $deployment->shouldReceive('templateHasEncryptionKey')->andReturn(true); $deployment->shouldReceive('runTemplateCommand')->with($instance,'ikontrol:database-check',[])->andReturn(['exit_code'=>1,'output'=>'ERROR']);
         $service=new InstanceProvisioningService(Mockery::mock(CpanelService::class),Mockery::mock(InstanceFilesystemService::class),Mockery::mock(IkontrolInstanceConnectionService::class),app(AuditService::class),$deployment);
         try { $service->regenerateTemplateConfiguration($instance); $this->fail('Debió fallar.'); } catch (\RuntimeException) { $this->assertSame(S::Failed,$instance->fresh()->installation_status); }
     }

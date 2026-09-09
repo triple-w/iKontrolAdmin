@@ -110,6 +110,13 @@ class IkontrolDeploymentService
         $lines = [
             'CI_ENVIRONMENT = production',
             'logger.threshold = 4', '',
+            'fiscal.runtimeMode = integration',
+            'fiscal.enabled = false',
+            'fiscal.previewMode = false',
+            'fiscal.stampingEnabled = false',
+            'fiscal.environment = development',
+            'fiscal.allowRealPac = false',
+            'fiscal.pacAdapter = timbradorxpress', '',
             'app.baseURL = '.$this->ciEnvValue($baseUrl), '',
             'database.default.hostname = '.$this->ciEnvValue(config('ikontrol.db.host')),
             'database.default.database = '.$this->ciEnvValue($instance->db_name),
@@ -178,6 +185,17 @@ class IkontrolDeploymentService
     public function runTemplateCommand(IkontrolInstance $instance, string $command, array $arguments = []): array
     {
         return ($this->spark ?? app(AllowedSparkRunner::class))->run($this->safeInstancePath($instance), $command, $arguments);
+    }
+
+    public function repairTemplateSettings(IkontrolInstance $instance): array
+    {
+        $path = $this->safeInstancePath($instance);
+        $this->installOperationalCommands($path);
+        $result = ($this->spark ?? app(AllowedSparkRunner::class))->run($path, 'ikontrol:settings-baseline');
+        if (($result['exit_code'] ?? 1) !== 0) throw new RuntimeException('No fue posible reparar el baseline de settings.');
+        $decoded = app(ManagedCommandJsonProtocol::class)->decodeProcess($result);
+        if (($decoded['status'] ?? null) !== 'READY') throw new RuntimeException('El baseline de settings no superó la verificación.');
+        return $decoded;
     }
 
     public function installOperationalCommandsFor(IkontrolInstance $instance): array
@@ -314,7 +332,7 @@ PHP);
 <?php
 namespace App\Commands;
 use CodeIgniter\CLI\{BaseCommand,CLI};
-final class IkontrolLoggingStatus extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:logging-status';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$logger=config('Logger');$handlers=[];foreach(array_keys((array)$logger->handlers)as$class)$handlers[]=basename(str_replace('\\','/',$class));$files=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];CLI::write("IKONTROL_JSON_BEGIN\n".json_encode(['status'=>'SUCCESS','directory_exists'=>file_exists($dir),'is_directory'=>is_dir($dir),'writable'=>is_dir($dir)&&is_writable($dir),'file_count'=>count($files),'environment'=>ENVIRONMENT,'threshold'=>$logger->threshold,'handlers'=>$handlers],JSON_UNESCAPED_SLASHES)."\nIKONTROL_JSON_END");}}
+final class IkontrolLoggingStatus extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:logging-status';public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$dir=WRITEPATH.'logs';$logger=config('Logger');$handlers=[];foreach(array_keys((array)$logger->handlers)as$class)$handlers[]=basename(str_replace('\\','/',$class));$files=is_dir($dir)?glob($dir.DIRECTORY_SEPARATOR.'*.log')?:[]:[];$enabled=(int)$logger->threshold>0;$writable=is_dir($dir)&&is_writable($dir);CLI::write("IKONTROL_JSON_BEGIN\n".json_encode(['status'=>$enabled&&$writable?'READY':'FAILED','reason'=>!$enabled?'LOGGER_DISABLED':(!$writable?'LOG_DIRECTORY_NOT_WRITABLE':null),'directory_exists'=>file_exists($dir),'is_directory'=>is_dir($dir),'writable'=>$writable,'file_count'=>count($files),'environment'=>ENVIRONMENT,'threshold'=>$logger->threshold,'enabled'=>$enabled,'handlers'=>$handlers],JSON_UNESCAPED_SLASHES)."\nIKONTROL_JSON_END");}}
 PHP);
         File::put($directory.DIRECTORY_SEPARATOR.'IkontrolLogCheck.php', <<<'PHP'
 <?php
@@ -334,7 +352,29 @@ namespace App\Commands;
 use CodeIgniter\CLI\{BaseCommand,CLI};
 final class IkontrolDashboardCheck extends BaseCommand{protected $group='iKontrol';protected $name='ikontrol:dashboard-check';public function run(array$p){if(count($p)!==1||!filter_var($p[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$db=\Config\Database::connect();$tables=array_flip($db->listTables());$name=fn($n)=>$db->prefixTable($n);$checks=[];foreach(['users','roles','team','settings','dashboards','custom_widgets']as$t)$checks[$t.'_table']=isset($tables[$name($t)]);$user=null;if($checks['users_table'])$user=$db->table('users')->select('id,user_type,is_admin,role_id,status,disable_login,deleted')->where('email',strtolower($p[0]))->get()->getRowArray();$checks['user_access_record']=$user&&$user['status']==='active'&&!(int)$user['deleted']&&!(int)$user['disable_login'];$checks['staff_dashboard']=$user&&$user['user_type']==='staff';$checks['admin_access']=$user&&(int)$user['is_admin']===1&&(int)$user['role_id']===0;$status=in_array(false,$checks,true)?'FAILED':'READY';$reason=null;if(!$checks['users_table']||!$checks['roles_table']||!$checks['team_table'])$reason='TABLE_MISSING';elseif(!$checks['settings_table'])$reason='SETTING_MISSING';elseif(!$checks['dashboards_table'])$reason='DASHBOARD_MISSING';elseif(!$checks['custom_widgets_table'])$reason='WIDGET_CONFIG_MISSING';elseif(!$checks['user_access_record']||!$checks['admin_access'])$reason='ADMIN_INVALID';CLI::write("IKONTROL_JSON_BEGIN\n".json_encode(['status'=>$status,'reason'=>$reason,'checks'=>$checks])."\nIKONTROL_JSON_END");}}
 PHP);
-        foreach(['IkontrolAdminProvision.php','IkontrolAdminPasswordSet.php','IkontrolStampsStatus.php','IkontrolStampsAdjust.php','IkontrolLoggingStatus.php','IkontrolLogCheck.php','IkontrolAdminDiagnose.php','IkontrolDashboardCheck.php']as$file)@chmod($directory.DIRECTORY_SEPARATOR.$file,0640);
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolSettingsBaseline.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolSettingsBaseline extends BaseCommand {
+ protected $group='iKontrol'; protected $name='ikontrol:settings-baseline';
+ private const BASELINE=['timezone'=>'America/Mexico_City','language'=>'spanish','date_format'=>'Y-m-d','time_format'=>'small','first_day_of_week'=>'0','weekends'=>'','default_currency'=>'MXN','currency_symbol'=>'$','currency_position'=>'left','decimal_separator'=>'.','no_of_decimals'=>'2','accepted_file_formats'=>'jpg,jpeg,png,doc,xlsx,txt,pdf,zip,webm','site_logo'=>'','favicon'=>'','item_purchase_code'=>'CLEAN-LOCAL-NOT-LICENSED'];
+ public function run(array$p){if($p)throw new \RuntimeException('Este comando no acepta argumentos.');$db=\Config\Database::connect();if(!$db->tableExists('settings')){$this->emit(['status'=>'FAILED','reason'=>'SETTING_TABLE_MISSING']);return;}$table=$db->table('settings');$created=[];$corrected=[];$preserved=[];foreach(self::BASELINE as$name=>$default){$row=$table->select('id,setting_value')->where(['setting_name'=>$name,'deleted'=>0])->get()->getRowArray();if(!$row){$table->insert(['setting_name'=>$name,'setting_value'=>$default,'type'=>'app','deleted'=>0]);$created[]=$name;continue;}$value=(string)$row['setting_value'];$replacement=null;if(in_array($name,['site_logo','favicon'],true)&&in_array(trim($value),['b:0;','N;'],true))$replacement='';if($name==='item_purchase_code'&&trim($value)==='')$replacement=$default;if($name==='timezone'&&trim($value)==='')$replacement=$default;if($replacement!==null){$table->where('id',$row['id'])->update(['setting_value'=>$replacement]);$corrected[]=$name;}else{$preserved[]=$name;}}$check=$this->check($db);$this->emit(['status'=>$check['status'],'reason'=>$check['reason'],'created'=>$created,'corrected'=>$corrected,'preserved'=>$preserved,'checks'=>$check['checks']]);}
+ private function check($db){$rows=$db->table('settings')->select('setting_name,setting_value')->where('deleted',0)->whereIn('setting_name',array_keys(self::BASELINE))->get()->getResultArray();$values=[];foreach($rows as$r)$values[$r['setting_name']]=(string)$r['setting_value'];$checks=[];$reason=null;foreach(self::BASELINE as$name=>$default){$exists=array_key_exists($name,$values);$valid=$exists;if(in_array($name,['site_logo','favicon'],true))$valid=$exists&&!in_array(trim($values[$name]??''),['b:0;','N;'],true);if(in_array($name,['timezone','item_purchase_code'],true))$valid=$exists&&trim($values[$name]??'')!=='';$checks[$name]=['present'=>$exists,'valid'=>$valid];if(!$valid&&$reason===null)$reason=!$exists?'SETTING_MISSING':($name==='site_logo'?'SITE_LOGO_INVALID':($name==='favicon'?'FAVICON_INVALID':($name==='item_purchase_code'?'ITEM_PURCHASE_CODE_MISSING':'SETTING_INVALID')));}$status=$reason===null?'READY':'FAILED';return compact('status','reason','checks');}
+ private function emit(array$d){CLI::write("IKONTROL_JSON_BEGIN\n".json_encode($d,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\nIKONTROL_JSON_END");}
+}
+PHP);
+        // Replace the legacy table-only dashboard probe with the functional baseline contract.
+        File::put($directory.DIRECTORY_SEPARATOR.'IkontrolDashboardCheck.php', <<<'PHP'
+<?php
+namespace App\Commands;
+use CodeIgniter\CLI\{BaseCommand,CLI};
+final class IkontrolDashboardCheck extends BaseCommand {
+ protected $group='iKontrol'; protected $name='ikontrol:dashboard-check';
+ public function run(array$p){if(count($p)!==1||!filter_var($p[0],FILTER_VALIDATE_EMAIL))throw new \RuntimeException('Correo inválido.');$db=\Config\Database::connect();$tables=array_flip($db->listTables());$name=fn($n)=>$db->prefixTable($n);$checks=[];foreach(['users','roles','team','settings','dashboards','custom_widgets']as$t)$checks[$t.'_table']=isset($tables[$name($t)]);$user=$checks['users_table']?$db->table('users')->select('id,user_type,is_admin,role_id,status,disable_login,deleted')->where('email',strtolower($p[0]))->get()->getRowArray():null;$checks['user_access_record']=$user&&$user['status']==='active'&&!(int)$user['deleted']&&!(int)$user['disable_login'];$checks['staff_dashboard']=$user&&$user['user_type']==='staff';$checks['admin_access']=$user&&(int)$user['is_admin']===1&&(int)$user['role_id']===0;$required=['timezone','language','date_format','time_format','first_day_of_week','weekends','default_currency','currency_symbol','currency_position','decimal_separator','no_of_decimals','accepted_file_formats','site_logo','favicon','item_purchase_code'];$values=[];if($checks['settings_table'])foreach($db->table('settings')->select('setting_name,setting_value')->where('deleted',0)->whereIn('setting_name',$required)->get()->getResultArray()as$r)$values[$r['setting_name']]=(string)$r['setting_value'];$issues=[];foreach($required as$s)if(!array_key_exists($s,$values))$issues[]=['reason'=>'SETTING_MISSING','setting'=>$s];foreach(['site_logo','favicon']as$s)if(isset($values[$s])&&in_array(trim($values[$s]),['b:0;','N;'],true))$issues[]=['reason'=>strtoupper($s).'_INVALID','setting'=>$s];foreach(['timezone','item_purchase_code']as$s)if(isset($values[$s])&&trim($values[$s])==='')$issues[]=['reason'=>$s==='item_purchase_code'?'ITEM_PURCHASE_CODE_MISSING':'SETTING_INVALID','setting'=>$s];$checks['settings_baseline']=$issues?'FAILED':'READY';$status=in_array(false,$checks,true)||$issues?'FAILED':'READY';$reason=null;if(!$checks['users_table']||!$checks['roles_table']||!$checks['team_table'])$reason='TABLE_MISSING';elseif(!$checks['settings_table']||$issues)$reason=$issues[0]['reason']??'SETTING_MISSING';elseif(!$checks['dashboards_table'])$reason='DASHBOARD_MISSING';elseif(!$checks['custom_widgets_table'])$reason='WIDGET_CONFIG_MISSING';elseif(!$checks['user_access_record']||!$checks['admin_access'])$reason='ADMIN_INVALID';CLI::write("IKONTROL_JSON_BEGIN\n".json_encode(['status'=>$status,'reason'=>$reason,'checks'=>$checks,'settings_issues'=>$issues])."\nIKONTROL_JSON_END");}
+}
+PHP);
+        foreach(['IkontrolAdminProvision.php','IkontrolAdminPasswordSet.php','IkontrolStampsStatus.php','IkontrolStampsAdjust.php','IkontrolLoggingStatus.php','IkontrolLogCheck.php','IkontrolAdminDiagnose.php','IkontrolDashboardCheck.php','IkontrolSettingsBaseline.php']as$file)@chmod($directory.DIRECTORY_SEPARATOR.$file,0640);
     }
 
     private function normalizePath(string $path): string
