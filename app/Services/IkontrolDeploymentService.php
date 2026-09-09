@@ -179,13 +179,21 @@ class IkontrolDeploymentService
         return ($this->spark ?? app(AllowedSparkRunner::class))->run($this->safeInstancePath($instance), $command, $arguments);
     }
 
-    public function installOperationalCommandsFor(IkontrolInstance $instance): void
+    public function installOperationalCommandsFor(IkontrolInstance $instance): array
     {
         $path=$this->safeInstancePath($instance);
         $this->guardManagedCommandTargets($path);
         $this->installDatabaseCheckCommand($path);
         $this->installOperationalCommands($path);
         $this->writeDiagnosticToolsManifest($path);
+        $verification = ($this->spark ?? app(AllowedSparkRunner::class))->run($path, 'list');
+        $required = ['ikontrol:database-check', 'ikontrol:log-check', 'ikontrol:admin-diagnose', 'ikontrol:dashboard-check'];
+        $missing = array_values(array_filter($required, fn ($command) => ! str_contains((string) ($verification['output'] ?? ''), $command)));
+        if (($verification['exit_code'] ?? 1) !== 0 || $missing) {
+            $runId = strtoupper(bin2hex(random_bytes(4)));
+            throw new RuntimeException('Diagnóstico falló en MANAGED_COMMAND_DISCOVERY ['.$runId.']: Spark no encontró '.implode(', ', $missing ?: $required).'.');
+        }
+        return ['action' => 'INSTALL_DIAGNOSTIC_TOOLS', 'before_status' => 'UNKNOWN', 'action_result' => 'FILES_WRITTEN', 'verification_result' => 'SPARK_DISCOVERY_OK', 'after_status' => 'READY', 'commands' => $required];
     }
 
     public function runSensitiveTemplateCommand(IkontrolInstance $instance, string $command, array $arguments, string $input): array

@@ -27,7 +27,16 @@ class InstanceComprehensiveDiagnosticTest extends TestCase
         $client = Client::create(['name' => 'Test', 'active' => true]);
         $path = $this->root.'/general.ikontrol.solutions';
         foreach (['app', 'system', 'writable/logs', 'writable/session'] as $directory) File::ensureDirectoryExists($path.'/'.$directory);
-        foreach (['index.php', 'spark'] as $file) File::put($path.'/'.$file, 'ok');
+        File::put($path.'/index.php', 'ok');
+        File::put($path.'/spark', <<<'PHP'
+<?php
+$command=$argv[1]??'list';
+if($command==='list'){
+ foreach(glob(__DIR__.'/app/Commands/*.php')?:[] as$file){$code=file_get_contents($file);if(preg_match_all('/ikontrol:[a-z:-]+/',$code,$matches))foreach(array_unique($matches[0])as$name)echo $name.PHP_EOL;}
+ exit(0);
+}
+exit(1);
+PHP);
         $this->instance = IkontrolInstance::create(['client_id' => $client->id, 'ikontrol_template_id' => $template->id, 'name' => 'General', 'slug' => 'general', 'folder_name' => 'general.ikontrol.solutions', 'absolute_path' => $path, 'url' => 'https://general.ikontrol.solutions/', 'db_name' => 'general_db', 'installation_status' => InstallationStatus::Failed]);
     }
 
@@ -64,11 +73,13 @@ class InstanceComprehensiveDiagnosticTest extends TestCase
     {
         File::deleteDirectory($this->instance->absolute_path.'/writable/logs');
         $deployment = Mockery::mock(IkontrolDeploymentService::class);
-        $deployment->shouldReceive('installOperationalCommandsFor')->once()->with($this->instance);
+        $list=implode("\n",['ikontrol:database-check','ikontrol:log-check','ikontrol:admin-diagnose','ikontrol:dashboard-check']);
+        $deployment->shouldReceive('runTemplateCommand')->twice()->with($this->instance,'list')->andReturn(['exit_code'=>0,'output'=>$list]);
+        $deployment->shouldReceive('installOperationalCommandsFor')->once()->with($this->instance)->andReturn(['action_result'=>'FILES_WRITTEN']);
         $service = new InstanceComprehensiveDiagnosticService(Mockery::mock(IkontrolInstanceConnectionService::class), $deployment, app(AuditService::class));
         $service->installTools($this->instance);
         $result = $service->repairWritable($this->instance);
-        $this->assertTrue($result['writable/logs']);
+        $this->assertSame('READY',$result['after_status']);
         $this->assertDatabaseHas('admin_audit_logs', ['action' => 'install_instance_diagnostic_tools']);
         $this->assertDatabaseHas('admin_audit_logs', ['action' => 'repair_instance_writable']);
     }

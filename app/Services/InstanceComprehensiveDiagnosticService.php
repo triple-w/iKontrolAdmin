@@ -50,24 +50,30 @@ class InstanceComprehensiveDiagnosticService
         return $snapshot;
     }
 
-    public function installTools(IkontrolInstance $instance): void
+    public function installTools(IkontrolInstance $instance): array
     {
-        $this->deployment->installOperationalCommandsFor($instance);
+        $before = $this->commands($instance)['status'];
+        $result = $this->deployment->installOperationalCommandsFor($instance);
+        $after = $this->commands($instance);
+        if ($after['status'] !== 'OK') throw new RuntimeException('Diagnóstico falló en MANAGED_COMMAND_DISCOVERY: Spark no descubrió todas las herramientas administradas.');
         $this->audit->record('install_instance_diagnostic_tools', 'Herramientas administradas de diagnóstico instaladas.', $instance, ['version' => config('ikontrol.deployment.diagnostic_tools_version')]);
+        return ['action' => 'INSTALL_DIAGNOSTIC_TOOLS', 'before_status' => $before, 'action_result' => $result['action_result'], 'verification_result' => 'SPARK_DISCOVERY_OK', 'after_status' => 'READY'];
     }
 
     public function repairWritable(IkontrolInstance $instance): array
     {
         $path = $this->safePath($instance);
-        $results = [];
+        $before = $this->writableStatus($path); $results = [];
         foreach (['writable', 'writable/cache', 'writable/logs', 'writable/session', 'writable/uploads'] as $relative) {
             $target = $path.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
             if (is_link($target)) throw new RuntimeException('Se detectó un symlink no permitido dentro de writable.');
             if (! is_dir($target) && ! mkdir($target, 0775, true) && ! is_dir($target)) throw new RuntimeException('No fue posible preparar writable.');
             $results[$relative] = chmod($target, 0775) && is_writable($target);
         }
-        $this->audit->record('repair_instance_writable', 'Permisos writable reparados de forma controlada.', $instance, ['success' => ! in_array(false, $results, true)]);
-        return $results;
+        $after = $this->writableStatus($path);
+        if (in_array(false, $after, true)) throw new RuntimeException('La reparación terminó, pero writable continúa sin permisos de escritura.');
+        $this->audit->record('repair_instance_writable', 'Permisos writable reparados de forma controlada.', $instance, ['success' => true]);
+        return ['action' => 'REPAIR_WRITABLE', 'before_status' => in_array(false,$before,true)?'FAILED':'READY', 'action_result' => 'PERMISSIONS_APPLIED', 'verification_result' => 'WRITE_TEST_OK', 'after_status' => 'READY', 'directories' => $results];
     }
 
     private function filesystem(IkontrolInstance $instance): array
@@ -199,6 +205,18 @@ class InstanceComprehensiveDiagnosticService
         $values = [];
         foreach (preg_split('/\R/', $contents) ?: [] as $line) if (preg_match('/^\s*([A-Za-z][A-Za-z0-9_.]*)\s*=\s*(.*?)\s*$/', $line, $match)) $values[$match[1]] = trim($match[2], " \t\"'");
         return $values;
+    }
+
+    private function writableStatus(string $path): array
+    {
+        $result=[];
+        foreach (['writable/logs','writable/session'] as $relative) {
+            $directory=$path.DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$relative);
+            $ok=is_dir($directory)&&!is_link($directory)&&is_writable($directory);
+            if($ok){$probe=$directory.DIRECTORY_SEPARATOR.'.ikontroladmin-write-test-'.bin2hex(random_bytes(4));$ok=@file_put_contents($probe,'ok')===2;if(is_file($probe))@unlink($probe);}
+            $result[$relative]=$ok;
+        }
+        return $result;
     }
 
     private function match(string $expected, ?string $actual): string {return $actual !== null && hash_equals($expected, $actual) ? 'MATCH' : 'MISMATCH';}

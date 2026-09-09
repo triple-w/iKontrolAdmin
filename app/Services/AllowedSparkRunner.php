@@ -18,7 +18,8 @@ class AllowedSparkRunner
         $process->setTimeout((int) config('ikontrol.deployment.command_timeout', 300)); $process->run();
         $output = $process->getOutput().$process->getErrorOutput();
         foreach ([(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')] as $secret) if ($secret !== '') $output = str_replace($secret, '[REDACTED]', $output);
-        return ['exit_code'=>$process->getExitCode(), 'duration_ms'=>(int) ((microtime(true)-$started)*1000), 'output'=>mb_substr(trim($output), 0, 2000)];
+        $limit = in_array($command, ['list', 'migrate:status'], true) ? 20000 : 2000;
+        return ['exit_code'=>$process->getExitCode(), 'duration_ms'=>(int) ((microtime(true)-$started)*1000), 'output'=>mb_substr(trim($output), 0, $limit)];
     }
 
     public function runWithInput(string $path, string $command, array $arguments, string $input): array

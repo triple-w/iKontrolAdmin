@@ -20,6 +20,9 @@ class InstanceRuntimeDiagnosticService
     public function generateTestLog(IkontrolInstance $instance): array
     {
         $result = $this->runJson($instance, 'ikontrol:log-check');
+        if (! in_array($result['status'] ?? null, ['READY', 'SUCCESS'], true) || ! ($result['test_file_created'] ?? $result['written'] ?? false)) {
+            throw new RuntimeException('LOG_CHECK_FAILED: '.($result['reason'] ?? 'el logger no produjo evidencia de escritura').'.');
+        }
         $this->audit->record('instance_log_check', 'Prueba controlada del logger ejecutada.', $instance, [
             'success' => ($result['status'] ?? null) === 'SUCCESS',
         ]);
