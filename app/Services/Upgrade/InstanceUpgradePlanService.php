@@ -1,0 +1,6 @@
+<?php
+namespace App\Services\Upgrade;
+final class InstanceUpgradePlanService {
+ public function generate(array$detection,IkontrolVersionDefinition$definition,array$items,array$compatibility):array{$categories=[];foreach($items as$item){$cat=$item['category'];$status=$item['status'];$categories[$cat]['total']=($categories[$cat]['total']??0)+1;$categories[$cat]['statuses'][$status]=($categories[$cat]['statuses'][$status]??0)+1;$categories[$cat]['severity']=$this->maxSeverity($categories[$cat]['severity']??'INFO',$item['severity']);}$fiscal=collect($items)->first(fn($i)=>$i['category']==='FISCAL');return['read_only'=>true,'source'=>$detection['detected_version'],'target'=>$definition->version,'compatibility'=>$compatibility['compatibility'],'reasons'=>$compatibility['reasons'],'categories'=>$categories,'fiscal_actions'=>in_array($fiscal['status']??null,['NOT_INSTALLED','PARTIAL'],true)?['INSTALL_FISCAL_STRUCTURE','CONFIGURE_SAFE_MODE','KEEP_PRODUCTION_DISABLED']:[],'preserve'=>['.env','writable/','uploads/','customer_data'],'prohibited'=>['execute migrations','modify database','replace files','enable fiscal production']];}
+ private function maxSeverity(string$a,string$b):string{$rank=['INFO'=>0,'WARNING'=>1,'CRITICAL'=>2];return($rank[$b]??0)>($rank[$a]??0)?$b:$a;}
+}

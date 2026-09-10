@@ -1,0 +1,8 @@
+<?php
+namespace App\Services\Upgrade;
+use Illuminate\Database\ConnectionInterface;
+final class InstanceSettingsUpgradeAuditor {
+ public function audit(IkontrolVersionDefinition $definition,ConnectionInterface $db):array{$items=[];$secretNames=array_flip($definition->settings['secret_keys']??[]);$rows=$db->select('SELECT setting_name, setting_value FROM settings');$actual=[];foreach($rows as$row)$actual[(string)$row->setting_name]=(string)$row->setting_value;
+  foreach($definition->settings['settings']??[]as$expected){$name=$expected['name'];if(isset($secretNames[$name])||($expected['classification']??'')==='SECRET'){$items[]=UpgradeAuditItem::make('SETTINGS','SETTING',$name,'UNKNOWN','INFO','[REDACTED]',null,['difference'=>'SECRET_NOT_CHECKED']);continue;}if(!array_key_exists($name,$actual)){$items[]=UpgradeAuditItem::make('SETTINGS','SETTING',$name,'MISSING',$expected['required']??true?'WARNING':'INFO',null,$expected['default']??null);continue;}$value=$actual[$name];$valid=$this->valid($value,$expected['type']??'string');$status=!$valid?'INCOMPATIBLE':($value===(string)($expected['default']??$value)?'OK':'CUSTOMIZED');$items[]=UpgradeAuditItem::make('SETTINGS','SETTING',$name,$status,!$valid?'CRITICAL':($status==='CUSTOMIZED'?'INFO':'INFO'),$value,$expected['default']??null,['difference'=>!$valid?'INVALID':($status==='CUSTOMIZED'?'CUSTOMIZED':'VALID')]);}return$items; }
+ private function valid(string$value,string$type):bool{return match($type){'boolean'=>in_array(strtolower($value),['','0','1','true','false','yes','no'],true),'integer'=>filter_var($value,FILTER_VALIDATE_INT)!==false,'email'=>$value===''||filter_var($value,FILTER_VALIDATE_EMAIL)!==false,'url'=>$value===''||filter_var($value,FILTER_VALIDATE_URL)!==false,default=>true};}
+}

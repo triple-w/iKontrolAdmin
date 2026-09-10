@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model; use Illuminate\Database\Eloquent\Relations\{BelongsTo,HasMany};
+class IkontrolUpgradeAudit extends Model { protected $fillable=['ikontrol_instance_id','source_version','target_version','status','compatibility','started_at','finished_at','summary_json','plan_json']; protected function casts():array{return['started_at'=>'datetime','finished_at'=>'datetime','summary_json'=>'array','plan_json'=>'array'];} public function instance():BelongsTo{return $this->belongsTo(IkontrolInstance::class,'ikontrol_instance_id');} public function items():HasMany{return $this->hasMany(IkontrolUpgradeAuditItem::class,'upgrade_audit_id');} }

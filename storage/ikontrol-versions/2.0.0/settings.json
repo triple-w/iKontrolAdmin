@@ -1,0 +1,10 @@
+{
+  "secret_keys": ["email_smtp_pass", "gmail_smtp_client_secret", "outlook_smtp_client_secret"],
+  "settings": [
+    {"name":"timezone","type":"string","default":"America/Mexico_City","classification":"BASE","required":true},
+    {"name":"language","type":"string","default":"spanish","classification":"BASE","required":true},
+    {"name":"default_currency","type":"string","default":"MXN","classification":"CUSTOMER","required":true},
+    {"name":"no_of_decimals","type":"integer","default":"2","classification":"BASE","required":true},
+    {"name":"email_smtp_pass","type":"string","classification":"SECRET","required":false}
+  ]
+}

@@ -37,6 +37,9 @@ class ExistingInstanceRegistrationTest extends TestCase
             'slug' => 'dold',
             'folder_name' => $folderName,
             'db_name' => 'tws001_ikontrol_dold',
+            'installation_origin' => 'EXISTING',
+            'upgrade_status' => 'NOT_AUDITED',
+            'target_version' => '2.0.0',
         ], $request->rules());
 
         $this->assertSame($expectedValid, $validator->passes());

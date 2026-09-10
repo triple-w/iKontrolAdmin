@@ -1,0 +1,11 @@
+{
+  "excluded": ["writable/**", "uploads/**", "logs/**", "cache/**", "vendor/**", "node_modules/**"],
+  "files": [
+    {"path":"spark","type":"REQUIRED"},
+    {"path":"composer.json","type":"CUSTOMIZABLE"},
+    {"path":"app/Config/App.php","type":"CUSTOMIZABLE"},
+    {"path":"app/Config/Database.php","type":"CUSTOMIZABLE"},
+    {"path":"app/Config/Fiscal.php","type":"REQUIRED"},
+    {"path":"app/Config/TimbradorXpress.php","type":"REQUIRED"}
+  ]
+}

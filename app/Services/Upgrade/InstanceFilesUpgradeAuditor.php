@@ -1,0 +1,8 @@
+<?php
+namespace App\Services\Upgrade;
+use App\Models\IkontrolInstance;
+final class InstanceFilesUpgradeAuditor {
+ private const EXCLUDED=['writable/','uploads/','logs/','cache/','vendor/','node_modules/'];
+ public function audit(IkontrolInstance $instance,IkontrolVersionDefinition $definition):array{$root=rtrim((string)$instance->absolute_path,'/\\');$items=[];foreach($definition->files['files']??[]as$file){$relative=str_replace('\\','/',$file['path']);if($this->excluded($relative)||str_contains($relative,'..')||str_starts_with($relative,'/'))continue;$path=$root.DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$relative);$type=$file['type']??'REQUIRED';if(!is_file($path)){$items[]=UpgradeAuditItem::make('FILES','FILE',$relative,'MISSING',$type==='OPTIONAL'?'INFO':'WARNING',null,$file['sha256']??'present',['difference'=>'MISSING','file_type'=>$type]);continue;}$expected=$file['sha256']??null;if(!$expected){$items[]=UpgradeAuditItem::make('FILES','FILE',$relative,'UNKNOWN','INFO','present',null,['difference'=>'UNKNOWN_DIFFERENCE','file_type'=>$type]);continue;}$actual=hash_file('sha256',$path);$match=hash_equals(strtolower($expected),strtolower($actual));$status=$match?'OK':($type==='CUSTOMIZABLE'?'CUSTOMIZED':'DIFFERENT');$items[]=UpgradeAuditItem::make('FILES','FILE',$relative,$status,$match?'INFO':($status==='CUSTOMIZED'?'WARNING':'WARNING'),$actual,$expected,['difference'=>$match?'MATCH':($status==='CUSTOMIZED'?'CUSTOMIZED':'UNKNOWN_DIFFERENCE'),'file_type'=>$type]);}return$items;}
+ private function excluded(string$path):bool{foreach(self::EXCLUDED as$prefix)if(str_starts_with($path,$prefix))return true;return false;}
+}

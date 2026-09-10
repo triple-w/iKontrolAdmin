@@ -30,8 +30,11 @@ class InstanceRequest extends FormRequest
                 'not_regex:#\.\.|[\\\\/]#',
                 Rule::unique('ikontrol_instances'),
             ],
+            'absolute_path' => ['nullable', 'string', 'max:1000'],
             'domain' => ['nullable', 'string', 'max:255'],
             'url' => ['nullable', 'url', 'max:500'],
+            'db_host' => ['nullable', 'string', 'max:255'],
+            'target_version' => ['nullable', 'string', 'max:50', 'regex:/\A[0-9A-Za-z._-]+\z/'],
             'db_name' => [
                 'required',
                 'regex:/\A[a-zA-Z0-9_]+\z/',

@@ -1,0 +1,3 @@
+<?php
+namespace App\Services\Upgrade;
+final class UpgradeAuditItem { public static function make(string $category,string $type,string $name,string $status,string $severity='INFO',mixed $current=null,mixed $expected=null,array $details=[]):array{return['category'=>$category,'object_type'=>$type,'object_name'=>$name,'status'=>$status,'severity'=>$severity,'current_value'=>self::display($current),'expected_value'=>self::display($expected),'details_json'=>$details];} private static function display(mixed $value):?string{if($value===null)return null;if(is_bool($value))return$value?'true':'false';return is_scalar($value)?(string)$value:json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);} }

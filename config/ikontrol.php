@@ -13,6 +13,8 @@ return [
     'folder_suffix' => env('IKONTROL_FOLDER_SUFFIX', '.ikontrol.solutions'),
     'version_sources' => [
         'archive_root' => env('IKONTROL_VERSION_ARCHIVE_ROOT', storage_path('ikontrol-versions')),
+        'manifest_root' => env('IKONTROL_VERSION_MANIFEST_ROOT', storage_path('ikontrol-versions')),
+        'default_target' => env('IKONTROL_UPGRADE_TARGET', '2.0.0'),
     ],
     'templates' => [
         'root' => env('IKONTROL_TEMPLATE_ROOT', storage_path('ikontrol-templates')),

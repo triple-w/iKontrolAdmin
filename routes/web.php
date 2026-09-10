@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, InstanceDiagnosticsController, InstanceOperationController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, InstanceDiagnosticsController, InstanceOperationController, InstanceUpgradeController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -18,6 +18,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/{instance}', [InstanceController::class, 'show'])->name('instances.show');
     Route::post('/instances/{instance}/test', [InstanceController::class, 'testConnection'])->middleware('throttle:10,1')->name('instances.test');
     Route::post('/instances/{instance}/inspect', [InstanceController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.inspect');
+    Route::post('/instances/{instance}/upgrade-audits', [InstanceUpgradeController::class, 'analyze'])->middleware('throttle:3,1')->name('instances.upgrade-audits.analyze');
+    Route::get('/instances/{instance}/upgrade-audits/{upgradeAudit}', [InstanceUpgradeController::class, 'show'])->name('instances.upgrade-audits.show');
+    Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/dry-run', [InstanceUpgradeController::class, 'dryRun'])->middleware('throttle:5,1')->name('instances.upgrade-audits.dry-run');
     Route::post('/instances/{instance}/operations/{operation}', [InstanceOperationController::class, 'run'])->whereIn('operation',['files','database','reassign-user','key','cache','migrate','health'])->middleware('throttle:10,1')->name('instances.operations.run');
     Route::post('/instances/{instance}/administrators/{operation}', [InstanceOperationController::class, 'admin'])->whereIn('operation',['create','reset'])->middleware('throttle:5,1')->name('instances.operations.admin');
     Route::post('/instances/{instance}/stamps', [InstanceDiagnosticsController::class,'stamps'])->middleware('throttle:5,1')->name('instances.stamps.move');

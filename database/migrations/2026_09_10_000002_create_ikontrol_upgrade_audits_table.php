@@ -1,0 +1,6 @@
+<?php
+use Illuminate\Database\Migrations\Migration; use Illuminate\Database\Schema\Blueprint; use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+ public function up(): void { Schema::create('ikontrol_upgrade_audits',function(Blueprint $t){$t->id();$t->foreignId('ikontrol_instance_id')->constrained('ikontrol_instances')->cascadeOnDelete();$t->string('source_version',80)->nullable();$t->string('target_version',50);$t->string('status',30)->index();$t->string('compatibility',30)->nullable()->index();$t->timestamp('started_at');$t->timestamp('finished_at')->nullable();$t->json('summary_json')->nullable();$t->json('plan_json')->nullable();$t->timestamps();}); Schema::create('ikontrol_upgrade_audit_items',function(Blueprint $t){$t->id();$t->foreignId('upgrade_audit_id')->constrained('ikontrol_upgrade_audits')->cascadeOnDelete();$t->string('category',30)->index();$t->string('object_type',60);$t->string('object_name',500);$t->string('status',40)->index();$t->string('severity',20)->index();$t->text('current_value')->nullable();$t->text('expected_value')->nullable();$t->json('details_json')->nullable();$t->timestamps();}); }
+ public function down(): void {Schema::dropIfExists('ikontrol_upgrade_audit_items');Schema::dropIfExists('ikontrol_upgrade_audits');}
+};

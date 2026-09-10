@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "framework": "CodeIgniter 4.6.1",
+  "supported_upgrade_sources": ["2.0.0", "3.x"],
+  "required_modules": ["invoice"],
+  "required_commands": ["spark"],
+  "fiscal": true,
+  "fiscal_capabilities": {
+    "tables": ["fiscal_documents"],
+    "files": ["app/Config/Fiscal.php", "app/Config/TimbradorXpress.php"]
+  }
+}

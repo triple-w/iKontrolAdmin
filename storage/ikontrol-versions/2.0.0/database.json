@@ -1,0 +1,15 @@
+{
+  "tables": [
+    {"name":"settings","severity":"CRITICAL","columns":[
+      {"name":"setting_name","type":"varchar(255)","nullable":false,"severity":"CRITICAL"},
+      {"name":"setting_value","type":"text","nullable":true,"severity":"WARNING"}
+    ],"indexes":[]},
+    {"name":"users","severity":"CRITICAL","columns":[
+      {"name":"id","type":"int unsigned","nullable":false,"severity":"CRITICAL"}
+    ],"indexes":[{"name":"PRIMARY","severity":"CRITICAL"}]},
+    {"name":"invoices","severity":"WARNING","columns":[
+      {"name":"id","type":"int unsigned","nullable":false,"severity":"CRITICAL"}
+    ],"indexes":[{"name":"PRIMARY","severity":"CRITICAL"}]},
+    {"name":"fiscal_documents","severity":"WARNING","columns":[],"indexes":[]}
+  ]
+}

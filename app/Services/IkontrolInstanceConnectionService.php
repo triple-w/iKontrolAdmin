@@ -20,7 +20,7 @@ class IkontrolInstanceConnectionService
 
     public function test(IkontrolInstance $instance): array
     {
-        $result = $this->attempt($this->connectionName($instance), $instance->db_name);
+        $result = $this->attempt($this->connectionName($instance), $instance->db_name, $instance->db_host);
         $instance->update([
             'last_connection_at' => now(),
             'last_connection_status' => $result['success'] ? 'CONNECTED' : 'ERROR',
@@ -33,7 +33,7 @@ class IkontrolInstanceConnectionService
     public function withInstanceConnection(IkontrolInstance $instance, Closure $callback): mixed
     {
         $name = $this->connectionName($instance);
-        $this->configure($name, $instance->db_name);
+        $this->configure($name, $instance->db_name, $instance->db_host);
         DB::purge($name);
 
         try {
@@ -43,9 +43,9 @@ class IkontrolInstanceConnectionService
         }
     }
 
-    private function attempt(string $connection, string $database): array
+    private function attempt(string $connection, string $database, ?string $host = null): array
     {
-        $this->configure($connection, $database);
+        $this->configure($connection, $database, $host);
         $started = microtime(true);
 
         try {
@@ -60,11 +60,11 @@ class IkontrolInstanceConnectionService
         }
     }
 
-    private function configure(string $name, string $database): void
+    private function configure(string $name, string $database, ?string $host = null): void
     {
         config(["database.connections.$name" => [
             'driver' => 'mysql',
-            'host' => config('ikontrol.db.host'),
+            'host' => $host ?: config('ikontrol.db.host'),
             'port' => config('ikontrol.db.port'),
             'database' => $database,
             'username' => config('ikontrol.db.username'),
