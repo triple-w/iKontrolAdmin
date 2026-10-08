@@ -23,8 +23,10 @@ class ReleaseSyncService
             if ($version === null) { $summary['invalid']++; continue; }
 
             $attributes = [
+                'release_identifier' => $this->releaseIdentifier($remote, $tag),
                 'channel' => ($remote['prerelease'] ?? false) ? 'canary' : 'stable',
                 'git_tag' => $tag,
+                'source_ref' => $tag,
                 'commit_sha' => str_repeat('0', 40),
                 'source_repository' => $this->github->repository(),
                 'manifest_hash' => null,
@@ -33,6 +35,10 @@ class ReleaseSyncService
                 'published_at' => $this->date($remote['published_at'] ?? null),
                 'status' => 'discovered',
             ];
+            if ($asset = $this->artifactAsset($remote, $version)) {
+                $attributes['artifact_url'] = $asset['browser_download_url'];
+                if (preg_match('/\Asha256:([a-f0-9]{64})\z/i', (string) ($asset['digest'] ?? ''), $digest)) $attributes['artifact_sha256'] = strtolower($digest[1]);
+            }
 
             try {
                 $attributes['commit_sha'] = $this->github->commitSha($tag);
@@ -75,5 +81,20 @@ class ReleaseSyncService
     private function safeError(string $message): string
     {
         return mb_substr(preg_replace('/(?:token|bearer|password|secret)\s*[:=]?\s*[^\s,;]+/i', '[REDACTED]', $message) ?? 'Validación fallida.', 0, 1000);
+    }
+
+    private function releaseIdentifier(array $remote, string $tag): string
+    {
+        $value = trim((string) ($remote['name'] ?? $tag));
+        return preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,159}\z/', $value) ? $value : $tag;
+    }
+
+    private function artifactAsset(array $remote, string $version): ?array
+    {
+        $version = strtolower($version); $allowed = ['ikontrol-'.$version.'.zip', 'ikontrol-platform-'.$version.'.zip'];
+        foreach (($remote['assets'] ?? []) as $asset) {
+            if (is_array($asset) && in_array(strtolower((string) ($asset['name'] ?? '')), $allowed, true) && filter_var($asset['browser_download_url'] ?? null, FILTER_VALIDATE_URL)) return $asset;
+        }
+        return null;
     }
 }

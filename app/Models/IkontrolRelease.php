@@ -11,7 +11,8 @@ class IkontrolRelease extends Model
     public const STATUSES = ['discovered', 'validated', 'invalid', 'deprecated'];
 
     protected $fillable = [
-        'version', 'channel', 'git_tag', 'commit_sha', 'source_repository',
+        'version', 'release_identifier', 'channel', 'git_tag', 'source_ref', 'commit_sha', 'source_repository',
+        'artifact_url', 'artifact_path', 'artifact_sha256', 'artifact_verification_status', 'artifact_manifest_json',
         'manifest_hash', 'manifest_json', 'validation_errors', 'published_at',
         'discovered_at', 'status',
     ];
@@ -20,6 +21,7 @@ class IkontrolRelease extends Model
     {
         return [
             'manifest_json' => 'array',
+            'artifact_manifest_json' => 'array',
             'validation_errors' => 'array',
             'published_at' => 'datetime',
             'discovered_at' => 'datetime',

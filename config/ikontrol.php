@@ -23,7 +23,16 @@ return [
         'max_manifest_bytes' => (int) env('IKONTROL_RELEASE_MANIFEST_MAX_BYTES', 262144),
     ],
     'upgrade' => [
-        'canonical_version' => env('IKONTROL_CANONICAL_VERSION', '1.1.4'),
+        'canonical_version' => env('IKONTROL_CANONICAL_VERSION', '1.1.5'),
+    ],
+    'release_deployment' => [
+        'artifact_root' => env('IKONTROL_RELEASE_ARTIFACT_ROOT', storage_path('app/ikontrol-releases/artifacts')),
+        'staging_root' => env('IKONTROL_RELEASE_STAGING_ROOT', storage_path('app/ikontrol-releases/staging')),
+        'backup_root' => env('IKONTROL_RELEASE_BACKUP_ROOT', storage_path('app/ikontrol-releases/backups')),
+        'max_archive_bytes' => (int) env('IKONTROL_RELEASE_MAX_ARCHIVE_BYTES', 536870912),
+        'max_extracted_bytes' => (int) env('IKONTROL_RELEASE_MAX_EXTRACTED_BYTES', 1073741824),
+        'max_files' => (int) env('IKONTROL_RELEASE_MAX_FILES', 50000),
+        'protected_paths' => ['.env', '.git', 'writable', 'files', 'uploads', 'storage/runtime', 'storage/logs', 'storage/framework', 'logs', 'cache', 'sessions', 'backups'],
     ],
     'templates' => [
         'root' => env('IKONTROL_TEMPLATE_ROOT', storage_path('ikontrol-templates')),

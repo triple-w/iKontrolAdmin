@@ -3,15 +3,49 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\{IkontrolInstance, IkontrolUpgradeAudit};
+use App\Models\{IkontrolInstance, IkontrolRelease, IkontrolUpgradeAudit, InstanceUpdateRun};
 use App\Services\AuditService;
 use App\Services\Upgrade\{InstanceUpgradeAuditService, InstanceVersionManagementService};
+use App\Services\Versioning\ReleaseDeploymentService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Throwable;
 
 class InstanceUpgradeController extends Controller
 {
+    public function prepareDeployment(IkontrolInstance $instance, IkontrolRelease $release, ReleaseDeploymentService $service, AuditService $audit)
+    {
+        $audit->record('INSTANCE_RELEASE_PREPARE_STARTED', 'Preparación y dry-run de despliegue solicitados.', $instance, ['release_id' => $release->id, 'version' => $release->version]);
+        try {
+            $run = $service->prepare($instance, $release);
+            $audit->record('INSTANCE_RELEASE_PREPARE_COMPLETED', 'Dry-run de despliegue almacenado.', $instance, ['update_run_id' => $run->id, 'status' => $run->status]);
+            return redirect()->route('instances.update-runs.show', [$instance, $run])->with($run->status === 'DEPLOYMENT_READY' ? 'success' : 'error', 'Plan de despliegue generado: '.$run->status.'.');
+        } catch (Throwable $e) {
+            report($e); $audit->record('INSTANCE_RELEASE_PREPARE_FAILED', 'No fue posible preparar el despliegue.', $instance, ['release_id' => $release->id]);
+            return back()->with('error', 'No fue posible preparar el despliegue seguro.');
+        }
+    }
+
+    public function showDeployment(IkontrolInstance $instance, InstanceUpdateRun $updateRun)
+    {
+        $this->runBelongsTo($updateRun, $instance); $updateRun->load('release');
+        return view('admin.instances.deployment-run', compact('instance', 'updateRun'));
+    }
+
+    public function executeDeployment(IkontrolInstance $instance, InstanceUpdateRun $updateRun, Request $request, ReleaseDeploymentService $service, AuditService $audit)
+    {
+        $this->confirmation($request, $instance); $this->runBelongsTo($updateRun, $instance);
+        $audit->record('INSTANCE_RELEASE_DEPLOYMENT_STARTED', 'Despliegue de código y upgrade dirigido confirmados.', $instance, ['update_run_id' => $updateRun->id, 'release_id' => $updateRun->release_id]);
+        try {
+            $service->execute($instance, $updateRun);
+            $audit->record('INSTANCE_RELEASE_DEPLOYMENT_COMPLETED', 'Despliegue, upgrade y reinspección completados.', $instance, ['update_run_id' => $updateRun->id]);
+            return redirect()->route('instances.show', [$instance, 'tab' => 'upgrade'])->with('success', 'Release desplegado y validado.');
+        } catch (Throwable $e) {
+            report($e); $updateRun->refresh();
+            $audit->record('INSTANCE_RELEASE_DEPLOYMENT_FAILED', 'El despliegue no se completó; revise rollback y base de datos.', $instance, ['update_run_id' => $updateRun->id, 'rollback_status' => $updateRun->rollback_status, 'database_review_required' => $updateRun->database_review_required]);
+            return redirect()->route('instances.update-runs.show', [$instance, $updateRun])->with('error', 'El despliegue falló. Revise el estado de rollback antes de continuar.');
+        }
+    }
     public function inspect(IkontrolInstance $instance, InstanceVersionManagementService $service, AuditService $audit)
     {
         $result = $service->inspect($instance);
@@ -117,5 +151,10 @@ class InstanceUpgradeController extends Controller
     private function belongsTo(IkontrolUpgradeAudit $audit, IkontrolInstance $instance): void
     {
         abort_unless($audit->ikontrol_instance_id === $instance->id, 404);
+    }
+
+    private function runBelongsTo(InstanceUpdateRun $run, IkontrolInstance $instance): void
+    {
+        abort_unless($run->instance_id === $instance->id, 404);
     }
 }

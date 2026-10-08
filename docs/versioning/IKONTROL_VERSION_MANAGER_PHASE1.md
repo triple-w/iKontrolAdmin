@@ -138,3 +138,5 @@ La dirección futura es provisionar desde una release estable de `ikontrol-platf
 Fase 2 implementará preflight, backup real, descarga/verificación de artefactos, deploy, migraciones/comandos allowlisted, health check y rollback, con confirmaciones y auditoría. Fase 3 agregará un grafo de upgrade paths y selección segura de rutas multiversión.
 
 Hasta entonces no se actualiza `ikontrol.ikontrol.solutions`, DOLD ni ninguna otra instancia; tampoco se ejecutan comandos, migraciones o cambios de archivos remotos.
+
+> Evolución: la capa posterior de distribución de código ya está diseñada e implementada en Admin y se documenta en `IKONTROL_RELEASE_CODE_DEPLOYMENT.md`. Su uso real sigue requiriendo publicar un asset y manifest de archivos verificables desde Platform.

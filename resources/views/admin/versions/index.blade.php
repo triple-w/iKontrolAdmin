@@ -2,16 +2,16 @@
 @section('title','Versiones iKontrol')
 @section('content')
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-6">
-  <div><h4 class="mb-1">iKontrol · Versiones</h4><p class="text-body-secondary mb-0">Releases distribuibles descubiertas desde GitHub Releases. No ejecuta actualizaciones.</p></div>
+  <div><h4 class="mb-1">iKontrol · Versiones</h4><p class="text-body-secondary mb-0">Releases inmutables y estado de verificación de sus artefactos.</p></div>
   <form method="POST" action="{{ route('versions.sync') }}">@csrf<button class="btn btn-primary"><i class="icon-base ti tabler-refresh me-2"></i>Buscar actualizaciones</button></form>
 </div>
 @include('admin.partials.flash')
 <div class="card mb-6">
-  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Versión</th><th>Canal</th><th>Estado</th><th>Publicada</th><th>Commit</th><th></th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Versión</th><th>Canal</th><th>Estado</th><th>Artefacto</th><th>Publicada</th><th>Commit</th><th></th></tr></thead><tbody>
   @forelse($releases as $release)
     @php $statusColors=['validated'=>'success','invalid'=>'danger','discovered'=>'info','deprecated'=>'secondary']; @endphp
-    <tr><td><strong>{{ $release->version }}</strong><small class="d-block text-body-secondary">{{ $release->git_tag }}</small></td><td><span class="badge bg-label-{{ $release->channel==='canary'?'warning':'primary' }}">{{ ucfirst($release->channel) }}</span></td><td><span class="badge bg-label-{{ $statusColors[$release->status]??'secondary' }}">{{ ucfirst($release->status) }}</span></td><td>{{ $release->published_at?->format('d/m/Y H:i') ?? '—' }}</td><td><code>{{ substr($release->commit_sha,0,12) }}</code></td><td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="{{ route('versions.releases.manifest',$release) }}">Ver manifest</a><a class="btn btn-sm btn-outline-secondary" href="{{ route('versions.releases.manifest',[$release,'section'=>'compatibility']) }}#compatibility">Ver compatibilidad</a><button class="btn btn-sm btn-secondary" disabled title="Disponible en Fase 2">Actualizar · Fase 2</button></div></td></tr>
-  @empty<tr><td colspan="6" class="text-center py-6">No hay releases registradas. Use “Buscar actualizaciones”.</td></tr>@endforelse
+    <tr><td><strong>{{ $release->version }}</strong><small class="d-block text-body-secondary">{{ $release->release_identifier ?? $release->git_tag }}</small></td><td><span class="badge bg-label-{{ $release->channel==='canary'?'warning':'primary' }}">{{ ucfirst($release->channel) }}</span></td><td><span class="badge bg-label-{{ $statusColors[$release->status]??'secondary' }}">{{ ucfirst($release->status) }}</span></td><td><span class="badge bg-label-{{ $release->artifact_verification_status==='verified'?'success':(in_array($release->artifact_verification_status,['checksum_failed','invalid'],true)?'danger':'secondary') }}">{{ strtoupper($release->artifact_verification_status??'unverified') }}</span></td><td>{{ $release->published_at?->format('d/m/Y H:i') ?? '—' }}</td><td><code>{{ substr($release->commit_sha,0,12) }}</code></td><td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="{{ route('versions.releases.manifest',$release) }}">Ver manifest</a><a class="btn btn-sm btn-outline-secondary" href="{{ route('versions.releases.manifest',[$release,'section'=>'compatibility']) }}#compatibility">Ver compatibilidad</a></div></td></tr>
+  @empty<tr><td colspan="7" class="text-center py-6">No hay releases registradas. Use “Buscar actualizaciones”.</td></tr>@endforelse
   </tbody></table></div>
 </div>
 
