@@ -44,7 +44,7 @@ final class InstanceVersionManagementService
         if ($current === null) {
             $adoption = $this->safeCheck(fn () => $this->runner->runAdoptBaseline($this->path($instance)));
             $state = $this->ready($database) && $this->compatible($adoption) ? 'LEGACY_ADOPTABLE' : 'BLOCKED';
-        } elseif (! $this->ready($database) || ! $this->ready($baseline)) {
+        } elseif (! $this->ready($database)) {
             $state = 'BLOCKED';
         } elseif (version_compare($current, $canonical, '==')) {
             $state = 'CURRENT';
@@ -62,7 +62,7 @@ final class InstanceVersionManagementService
             'installation_origin' => $current === null ? 'LEGACY' : $instance->installation_origin,
             'upgrade_status' => $state,
             'database_status' => $this->resultStatus($database),
-            'baseline_status' => $this->resultStatus($baseline),
+            'baseline_status' => $this->baselineStatus($baseline),
             'last_upgrade_audit_at' => now(),
             'last_connection_at' => now(),
             'last_connection_status' => 'CONNECTED',
@@ -229,6 +229,17 @@ final class InstanceVersionManagementService
     private function resultStatus(?array $result): string
     {
         return $this->ready($result) ? 'READY' : strtoupper((string) ($result['status'] ?? 'FAILED'));
+    }
+
+    private function baselineStatus(?array $result): string
+    {
+        if ($this->ready($result)) return 'READY';
+        $status = strtoupper((string) ($result['status'] ?? 'UNKNOWN'));
+        return match ($status) {
+            'INCOMPLETE', 'PARTIAL' => 'INCOMPLETE',
+            'FAIL', 'FAILED', 'ERROR', 'BLOCKED' => 'FAIL',
+            default => 'UNKNOWN',
+        };
     }
 
     private function sanitize(array $data): array

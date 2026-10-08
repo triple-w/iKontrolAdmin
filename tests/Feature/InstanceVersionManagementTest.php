@@ -21,19 +21,19 @@ class InstanceVersionManagementTest extends TestCase
         config(['ikontrol.upgrade.canonical_version' => '1.1.4']);
     }
 
-    public function test_golden_114_is_current(): void
+    public function test_golden_114_with_ready_database_and_failed_baseline_is_current(): void
     {
         [$service, $runner] = $this->service(); $instance = $this->makeInstance('golden');
-        $this->inspectionExpectations($runner, $instance, '1.1.4');
+        $this->inspectionExpectations($runner, $instance, '1.1.4', 'READY', 'FAIL');
         $result = $service->inspect($instance);
         $this->assertSame('CURRENT', $result['status']);
-        $this->assertDatabaseHas('ikontrol_instances', ['id' => $instance->id, 'detected_version' => '1.1.4', 'canonical_version' => '1.1.4', 'upgrade_status' => 'CURRENT', 'database_status' => 'READY', 'baseline_status' => 'READY']);
+        $this->assertDatabaseHas('ikontrol_instances', ['id' => $instance->id, 'detected_version' => '1.1.4', 'canonical_version' => '1.1.4', 'upgrade_status' => 'CURRENT', 'database_status' => 'READY', 'baseline_status' => 'FAIL']);
     }
 
-    public function test_smartfree_113_has_update_available(): void
+    public function test_smartfree_113_with_failed_baseline_has_update_available(): void
     {
         [$service, $runner] = $this->service(); $instance = $this->makeInstance('smartfree');
-        $this->inspectionExpectations($runner, $instance, '1.1.3');
+        $this->inspectionExpectations($runner, $instance, '1.1.3', 'READY', 'FAIL');
         $this->assertSame('UPDATE_AVAILABLE', $service->inspect($instance)['status']);
     }
 
@@ -46,6 +46,7 @@ class InstanceVersionManagementTest extends TestCase
         $runner->shouldReceive('runAdoptBaseline')->once()->with($instance->absolute_path)->andReturn($this->process(['status' => 'ADOPTABLE', 'adoptable' => true]));
         $this->assertSame('LEGACY_ADOPTABLE', $service->inspect($instance)['status']);
         $this->assertSame('LEGACY', $instance->fresh()->installation_origin);
+        $this->assertSame('FAIL', $instance->fresh()->baseline_status);
     }
 
     public function test_database_check_failure_blocks_instance(): void
@@ -145,13 +146,13 @@ class InstanceVersionManagementTest extends TestCase
     public function test_ui_lists_canonical_state_and_only_shows_actions_for_current_state(): void
     {
         $admin = AdminUser::create(['name' => 'UI Admin', 'email' => 'upgrade-ui@example.test', 'password' => 'a-secure-test-password', 'active' => true]);
-        $current = $this->makeInstance('uicurrent', ['detected_version' => '1.1.4', 'canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'upgrade_status' => 'CURRENT']);
-        $update = $this->makeInstance('uiupdate', ['detected_version' => '1.1.3', 'canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'upgrade_status' => 'UPDATE_AVAILABLE']);
+        $current = $this->makeInstance('uicurrent', ['detected_version' => '1.1.4', 'canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'database_status' => 'READY', 'baseline_status' => 'INCOMPLETE', 'upgrade_status' => 'CURRENT']);
+        $update = $this->makeInstance('uiupdate', ['detected_version' => '1.1.3', 'canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'database_status' => 'READY', 'baseline_status' => 'FAIL', 'upgrade_status' => 'UPDATE_AVAILABLE']);
         $legacy = $this->makeInstance('uilegacy', ['canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'upgrade_status' => 'LEGACY_ADOPTABLE', 'installation_origin' => 'LEGACY']);
 
         $this->withoutVite()->actingAs($admin)->get(route('instances.index'))->assertOk()->assertSee('Versión detectada')->assertSee('UPDATE AVAILABLE')->assertSee('LEGACY');
-        $this->actingAs($admin)->get(route('instances.show', [$current, 'tab' => 'upgrade']))->assertOk()->assertSee('Instancia actualizada')->assertDontSee('Ver plan');
-        $this->actingAs($admin)->get(route('instances.show', [$update, 'tab' => 'upgrade']))->assertOk()->assertSee('Ver plan')->assertDontSee('Evaluar adopción');
+        $this->actingAs($admin)->get(route('instances.show', [$current, 'tab' => 'upgrade']))->assertOk()->assertSee('Instancia actualizada')->assertSee('Platform actualizada; configuración base incompleta.')->assertDontSee('Ver plan');
+        $this->actingAs($admin)->get(route('instances.show', [$update, 'tab' => 'upgrade']))->assertOk()->assertSee('Ver plan')->assertSee('El baseline no bloquea por sí solo el versionado.')->assertDontSee('Evaluar adopción');
         $this->actingAs($admin)->get(route('instances.show', [$legacy, 'tab' => 'upgrade']))->assertOk()->assertSee('Evaluar adopción')->assertDontSee('Ver plan');
     }
 

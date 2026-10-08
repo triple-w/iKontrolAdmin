@@ -22,7 +22,7 @@ class InstanceUpgradeController extends Controller
             'CURRENT' => 'Instancia actualizada.',
             'UPDATE_AVAILABLE' => $result['current_version'].' → '.$result['canonical_version'].' disponible.',
             'LEGACY_ADOPTABLE' => 'Instancia legacy compatible con adopción dirigida.',
-            'BLOCKED' => 'La inspección detectó un bloqueo. Revise database-check, baseline o adopción.',
+            'BLOCKED' => 'La inspección detectó un bloqueo técnico. Revise database-check, versión, plan o adopción.',
             default => 'No fue posible comunicarse con la instancia.',
         };
         return redirect()->route('instances.show', [$instance, 'tab' => 'upgrade'])->with(in_array($result['status'], ['BLOCKED', 'UNREACHABLE'], true) ? 'error' : 'success', $message);

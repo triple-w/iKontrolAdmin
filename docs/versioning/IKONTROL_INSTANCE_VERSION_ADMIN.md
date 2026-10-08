@@ -29,10 +29,10 @@ La versión canónica se configura con `IKONTROL_CANONICAL_VERSION` y actualment
 
 Estados:
 
-- `CURRENT`: versión detectada igual a la canónica, database-check y baseline listos.
-- `UPDATE_AVAILABLE`: versión detectada menor que la canónica y checks listos.
+- `CURRENT`: versión accesible, versión detectada igual a la canónica y database-check listo.
+- `UPDATE_AVAILABLE`: versión detectada menor que la canónica y database-check listo.
 - `LEGACY_ADOPTABLE`: `current_version` nula, database-check listo y dry-run de adopción compatible.
-- `BLOCKED`: fallo de DB/baseline, plan incompatible, versión superior a la canónica o ejecución no confirmada por reinspección.
+- `BLOCKED`: fallo de database-check, plan incompatible, versión superior a la canónica, adopción técnicamente incompatible o ejecución no confirmada por reinspección.
 - `UNREACHABLE`: no fue posible ejecutar/decodificar `ikontrol:version`.
 
 ## Comandos Spark
@@ -57,6 +57,8 @@ El flujo de upgrade nunca llama `php spark migrate`. Los comandos operacionales 
 
 Admin ejecuta `version`, `database-check` y `baseline-check`. Para una versión nula también ejecuta el dry-run de `adopt-baseline`. Sólo actualiza metadata local y registra `INSTANCE_VERSION_INSPECTED`.
 
+`upgrade_status` representa exclusivamente el eje técnico de versionado. `baseline_status` representa la completitud funcional/onboarding y se normaliza a `READY`, `INCOMPLETE`, `FAIL` o `UNKNOWN`. Un baseline incompleto o fallido no convierte por sí solo una instancia en `BLOCKED`: Golden puede estar `CURRENT` con baseline `INCOMPLETE`, y una instancia anterior puede seguir `UPDATE_AVAILABLE`. El plan Spark conserva autoridad para bloquear si reporta un blocker de baseline o configuración.
+
 ### Actualización
 
 1. Una instancia `UPDATE_AVAILABLE` solicita `upgrade:plan` hacia la versión canónica.
@@ -66,7 +68,7 @@ Admin ejecuta `version`, `database-check` y `baseline-check`. Para una versión 
 5. Admin registra el inicio y vuelve a ejecutar el plan.
 6. Si continúa compatible, ejecuta `ikontrol:upgrade --yes`.
 7. Repite version, database-check y baseline-check.
-8. Sólo queda `CURRENT` si la reinspección confirma la versión canónica; en otro caso queda `BLOCKED`.
+8. Queda `CURRENT` si la reinspección confirma la versión canónica y database-check listo. El baseline se persiste y muestra por separado; en otro caso técnico queda `BLOCKED`.
 
 ### Adopción legacy
 
