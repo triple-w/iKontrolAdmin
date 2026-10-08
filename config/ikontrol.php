@@ -16,6 +16,15 @@ return [
         'manifest_root' => env('IKONTROL_VERSION_MANIFEST_ROOT', storage_path('ikontrol-versions')),
         'default_target' => env('IKONTROL_UPGRADE_TARGET', '2.0.0'),
     ],
+    'releases' => [
+        'repository' => env('IKONTROL_GITHUB_REPOSITORY', 'triple-w/ikontrol-platform'),
+        'github_token' => env('IKONTROL_GITHUB_TOKEN'),
+        'api_url' => env('IKONTROL_GITHUB_API_URL', 'https://api.github.com'),
+        'max_manifest_bytes' => (int) env('IKONTROL_RELEASE_MANIFEST_MAX_BYTES', 262144),
+    ],
+    'upgrade' => [
+        'canonical_version' => env('IKONTROL_CANONICAL_VERSION', '1.1.4'),
+    ],
     'templates' => [
         'root' => env('IKONTROL_TEMPLATE_ROOT', storage_path('ikontrol-templates')),
         'mysql_binary' => env('IKONTROL_MYSQL_BINARY', 'mysql'),

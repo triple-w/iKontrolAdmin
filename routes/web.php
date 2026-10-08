@@ -18,9 +18,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/{instance}', [InstanceController::class, 'show'])->name('instances.show');
     Route::post('/instances/{instance}/test', [InstanceController::class, 'testConnection'])->middleware('throttle:10,1')->name('instances.test');
     Route::post('/instances/{instance}/inspect', [InstanceController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.inspect');
+    Route::patch('/instances/{instance}/update-channel', [InstanceController::class, 'updateChannel'])->middleware('throttle:10,1')->name('instances.update-channel');
     Route::post('/instances/{instance}/upgrade-audits', [InstanceUpgradeController::class, 'analyze'])->middleware('throttle:3,1')->name('instances.upgrade-audits.analyze');
+    Route::post('/instances/{instance}/version-inspection', [InstanceUpgradeController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.version.inspect');
+    Route::post('/instances/{instance}/upgrade-plan', [InstanceUpgradeController::class, 'plan'])->middleware('throttle:3,1')->name('instances.upgrade.plan');
+    Route::post('/instances/{instance}/adoption-plan', [InstanceUpgradeController::class, 'adoptionPlan'])->middleware('throttle:3,1')->name('instances.adoption.plan');
     Route::get('/instances/{instance}/upgrade-audits/{upgradeAudit}', [InstanceUpgradeController::class, 'show'])->name('instances.upgrade-audits.show');
     Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/dry-run', [InstanceUpgradeController::class, 'dryRun'])->middleware('throttle:5,1')->name('instances.upgrade-audits.dry-run');
+    Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/execute', [InstanceUpgradeController::class, 'execute'])->middleware('throttle:2,1')->name('instances.upgrade.execute');
+    Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/adopt', [InstanceUpgradeController::class, 'adopt'])->middleware('throttle:2,1')->name('instances.adoption.execute');
     Route::post('/instances/{instance}/operations/{operation}', [InstanceOperationController::class, 'run'])->whereIn('operation',['files','database','reassign-user','key','cache','migrate','health'])->middleware('throttle:10,1')->name('instances.operations.run');
     Route::post('/instances/{instance}/administrators/{operation}', [InstanceOperationController::class, 'admin'])->whereIn('operation',['create','reset'])->middleware('throttle:5,1')->name('instances.operations.admin');
     Route::post('/instances/{instance}/stamps', [InstanceDiagnosticsController::class,'stamps'])->middleware('throttle:5,1')->name('instances.stamps.move');
@@ -40,6 +46,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/provisioning/{instance}/confirm-domain', [ProvisioningController::class, 'confirmDomain'])->middleware('throttle:3,1')->name('provisioning.confirm-domain');
     Route::post('/provisioning/{instance}/regenerate-configuration', [ProvisioningController::class, 'regenerateConfiguration'])->middleware('throttle:3,1')->name('provisioning.regenerate-configuration');
     Route::get('/versions', [IkontrolVersionController::class, 'index'])->name('versions.index');
+    Route::post('/versions/sync', [IkontrolVersionController::class, 'sync'])->middleware('throttle:3,1')->name('versions.sync');
+    Route::get('/versions/releases/{release}/manifest', [IkontrolVersionController::class, 'manifest'])->name('versions.releases.manifest');
     Route::get('/versions/create', [IkontrolVersionController::class, 'create'])->name('versions.create');
     Route::post('/versions', [IkontrolVersionController::class, 'store'])->name('versions.store');
     Route::get('/versions/templates/{template}/edit', [IkontrolVersionController::class, 'editTemplate'])->name('versions.templates.edit');

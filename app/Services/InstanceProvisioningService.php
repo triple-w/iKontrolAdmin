@@ -103,7 +103,7 @@ class InstanceProvisioningService
     {
         try {
             foreach (array_slice($this->steps($instance, $version), $start) as [$status, $action]) $this->step($instance, $status, $action);
-            $instance->update(['installation_status' => S::ReadyForDomain, 'installed_version' => $version->version, 'installed_at' => now()]);
+            $instance->update(['installation_status' => S::ReadyForDomain, 'installed_version' => $version->version, 'current_version' => $version->version, 'installed_at' => now()]);
             $this->log($instance, S::ReadyForDomain, 'SUCCESS', 'Instalación preparada; falta confirmar el dominio.');
             $this->audit->record('provision_instance', 'Instalación preparada para dominio.', $instance);
         } catch (Throwable $e) {
@@ -146,7 +146,7 @@ class InstanceProvisioningService
     {
         try {
             foreach (array_slice($this->templateSteps($instance, $template), $start) as [$status, $action]) $this->step($instance, $status, $action);
-            $instance->update(['installation_status' => S::ReadyForDomain, 'installed_version' => $template->app_version, 'installed_at' => now()]);
+            $instance->update(['installation_status' => S::ReadyForDomain, 'installed_version' => $template->app_version, 'current_version' => $template->app_version, 'installed_at' => now()]);
             $this->log($instance, S::ReadyForDomain, 'SUCCESS', 'Instalación preparada; falta confirmar el dominio.');
             $this->audit->record('provision_instance', 'Instalación preparada desde plantilla para dominio.', $instance);
         } catch (Throwable $e) {

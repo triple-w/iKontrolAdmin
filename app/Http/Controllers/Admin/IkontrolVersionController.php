@@ -4,8 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\IkontrolTemplateRequest;
-use App\Models\{IkontrolTemplate, IkontrolVersion};
+use App\Models\{IkontrolRelease, IkontrolTemplate, IkontrolVersion};
 use App\Services\{AuditService, IkontrolTemplateValidationService};
+use App\Services\Versioning\ReleaseSyncService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -13,12 +14,29 @@ class IkontrolVersionController extends Controller
 {
     public function index(IkontrolTemplateValidationService $validator)
     {
+        $releases = IkontrolRelease::orderByDesc('published_at')->orderByDesc('id')->get();
         $templates = IkontrolTemplate::latest()->get();
         $validity = $templates->mapWithKeys(function (IkontrolTemplate $template) use ($validator) {
             try { $validator->validate($template); return [$template->id => true]; } catch (\Throwable) { return [$template->id => false]; }
         });
         $legacyVersions = IkontrolVersion::whereNotIn('version', $templates->pluck('version'))->latest()->get();
-        return view('admin.versions.index', compact('templates', 'legacyVersions', 'validity'));
+        return view('admin.versions.index', compact('releases', 'templates', 'legacyVersions', 'validity'));
+    }
+
+    public function sync(ReleaseSyncService $sync, AuditService $audit)
+    {
+        try {
+            $summary = $sync->sync();
+            $audit->record('sync_platform_releases', 'Sincronización del catálogo de releases ejecutada.', 'ikontrol_releases', $summary);
+            return back()->with('success', sprintf('Descubiertas: %d · Importadas: %d · Actualizadas: %d · Inválidas: %d', $summary['discovered'], $summary['imported'], $summary['updated'], $summary['invalid']));
+        } catch (\Throwable) {
+            return back()->with('error', 'No fue posible consultar GitHub. Revise la configuración y vuelva a intentar.');
+        }
+    }
+
+    public function manifest(IkontrolRelease $release)
+    {
+        return view('admin.versions.manifest', compact('release'));
     }
 
     public function create() { return view('admin.versions.form', ['template' => new IkontrolTemplate(), 'legacyVersion' => null]); }

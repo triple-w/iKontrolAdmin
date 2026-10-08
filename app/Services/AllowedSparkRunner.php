@@ -12,7 +12,7 @@ class AllowedSparkRunner
         'cache:clear' => [], 'logs:clear' => ['--force'], 'migrate' => [],
         'ikontrol:database-check' => [], 'ikontrol:stamps-status' => [],
         'ikontrol:logging-status' => [], 'ikontrol:log-check' => [],
-        'ikontrol:settings-baseline' => [],
+        'ikontrol:settings-baseline' => [], 'ikontrol:baseline-check' => [],
     ];
 
     public function run(string $path, string $command, array $arguments = []): array
@@ -43,10 +43,39 @@ class AllowedSparkRunner
         return $this->execute($path, $command, [strtolower($email)], null, 20000);
     }
 
+    public function inspectVersion(string $path): array
+    {
+        return $this->execute($path, 'ikontrol:version', ['--json'], null, 20000);
+    }
+
+    public function runUpgradePlan(string $path, string $targetVersion): array
+    {
+        return $this->execute($path, 'ikontrol:upgrade:plan', ['--target='.$this->targetVersion($targetVersion), '--json'], null, 30000);
+    }
+
+    public function executeUpgrade(string $path, string $targetVersion): array
+    {
+        return $this->execute($path, 'ikontrol:upgrade', ['--target='.$this->targetVersion($targetVersion), '--yes', '--json'], null, 30000);
+    }
+
+    public function runAdoptBaseline(string $path, bool $execute = false): array
+    {
+        $arguments = $execute ? ['--execute', '--yes', '--json'] : ['--json'];
+        return $this->execute($path, 'ikontrol:adopt-baseline', $arguments, null, 30000);
+    }
+
+    private function targetVersion(string $version): string
+    {
+        if (! preg_match('/\A\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?\z/', $version)) {
+            throw new RuntimeException('Versión objetivo inválida.');
+        }
+        return $version;
+    }
+
     private function execute(string $path, string $command, array $arguments, ?string $input = null, int $limit = 4000, array $extraSecrets = []): array
     {
-        $root = realpath((string) config('ikontrol.instances_root')); $cwd = realpath($path);
-        if ($root === false || $cwd === false || ! str_starts_with($cwd, $root.DIRECTORY_SEPARATOR) || is_link($cwd)) throw new RuntimeException('El directorio de ejecución no es seguro.');
+        $root = realpath((string) config('ikontrol.instances_root')); $requestedPath = rtrim($path, '/\\'); $cwd = realpath($requestedPath);
+        if ($root === false || $cwd === false || ! str_starts_with($cwd, $root.DIRECTORY_SEPARATOR) || is_link($requestedPath) || is_link($cwd)) throw new RuntimeException('El directorio de ejecución no es seguro.');
         $binary = (string) config('ikontrol.deployment.php_binary', PHP_BINARY);
         if ($binary === '' || str_contains($binary, "\0") || str_contains($binary, "\n")) throw new RuntimeException('El binario PHP configurado no es válido.');
         $executionId = strtoupper(bin2hex(random_bytes(4))); $started = microtime(true);

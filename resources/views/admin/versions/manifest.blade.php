@@ -1,0 +1,11 @@
+@extends('layouts/layoutMaster')
+@section('title','Manifest '.$release->version)
+@section('content')
+<div class="d-flex justify-content-between align-items-center mb-6"><div><h4 class="mb-1">Release {{ $release->version }}</h4><p class="text-body-secondary mb-0">{{ $release->source_repository }} · {{ $release->git_tag }}</p></div><a class="btn btn-outline-secondary" href="{{ route('versions.index') }}">Volver</a></div>
+<div class="row g-6">
+  <div class="col-lg-8"><div class="card"><div class="card-header"><h5 class="mb-0">Manifest validado</h5></div><div class="card-body"><pre class="bg-dark text-white p-4 rounded overflow-auto mb-0">{{ json_encode($release->manifest_json, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) }}</pre></div></div></div>
+  <div class="col-lg-4" id="compatibility"><div class="card mb-6"><div class="card-header"><h5 class="mb-0">Compatibilidad</h5></div><div class="card-body"><p><strong>Canal:</strong> {{ ucfirst($release->channel) }}</p><p><strong>Desde:</strong></p><ul>@forelse(data_get($release->manifest_json,'from_versions',[]) as $version)<li><code>{{ $version }}</code></li>@empty<li>Ninguna versión declarada</li>@endforelse</ul><p class="small text-body-secondary mb-0">Stable sólo recibe stable. Canary puede recibir stable y canary. No se permiten downgrade ni la misma versión.</p></div></div>
+  @if($release->validation_errors)<div class="alert alert-danger"><strong>Errores de validación</strong><ul class="mb-0">@foreach($release->validation_errors as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+  <div class="card"><div class="card-body"><dl class="mb-0"><dt>SHA-256 del manifest</dt><dd class="text-break"><code>{{ $release->manifest_hash ?? 'No disponible' }}</code></dd><dt>Commit</dt><dd class="text-break"><code>{{ $release->commit_sha }}</code></dd><dt>Descubierta</dt><dd>{{ $release->discovered_at?->format('d/m/Y H:i:s') }}</dd></dl></div></div></div>
+</div>
+@endsection
