@@ -10,14 +10,15 @@ use Throwable;
 
 final class ReleaseDeploymentService
 {
-    public function __construct(private readonly ReleaseArtifactService $artifacts, private readonly DeploymentPlanService $plans, private readonly StagedFileDeploymentService $files, private readonly ReleaseCompatibilityService $compatibility, private readonly AllowedSparkRunner $runner, private readonly ManagedCommandJsonProtocol $protocol, private readonly InstanceVersionManagementService $versions) {}
+    public function __construct(private readonly ReleaseArtifactService $artifacts, private readonly DeploymentPlanService $plans, private readonly StagedFileDeploymentService $files, private readonly ReleaseCompatibilityService $compatibility, private readonly ReleasePromotionService $promotions, private readonly AllowedSparkRunner $runner, private readonly ManagedCommandJsonProtocol $protocol, private readonly InstanceVersionManagementService $versions) {}
 
     public function prepare(IkontrolInstance $instance, IkontrolRelease $release): InstanceUpdateRun
     {
+        $this->promotions->assertDeploymentAllowed($instance, $release);
         $canonical = $this->versions->canonicalVersion();
         if ($release->version !== $canonical || $release->status !== 'validated') throw new RuntimeException('Sólo el release canónico validado puede prepararse.');
         if (! $this->compatibility->isCompatible($instance, $release)) throw new RuntimeException('El release no es compatible con la versión o canal de la instancia.');
-        $run = InstanceUpdateRun::create(['instance_id' => $instance->id, 'release_id' => $release->id, 'from_version' => $instance->detected_version ?: $instance->current_version, 'to_version' => $release->version, 'status' => 'preflight', 'started_at' => now()]);
+        $run = InstanceUpdateRun::create(['instance_id' => $instance->id, 'release_id' => $release->id, 'release_commit_sha' => strtolower($release->commit_sha), 'release_artifact_sha256' => strtolower((string) $release->artifact_sha256), 'from_version' => $instance->detected_version ?: $instance->current_version, 'to_version' => $release->version, 'status' => 'preflight', 'started_at' => now()]);
         try {
             $staged = $this->artifacts->stage($release, $run); $plan = $this->plans->build($instance, $release, $staged);
             $plan['backup_path'] = rtrim((string) config('ikontrol.release_deployment.backup_root'), '/\\').DIRECTORY_SEPARATOR.'run-'.$run->id;
@@ -32,6 +33,8 @@ final class ReleaseDeploymentService
     {
         $run->loadMissing('release'); $release = $run->release;
         if ($run->instance_id !== $instance->id || $run->status !== 'DEPLOYMENT_READY' || ! $release || $release->version !== $this->versions->canonicalVersion() || $run->to_version !== $release->version) throw new RuntimeException('El plan de despliegue no autoriza esta operación.');
+        $this->promotions->assertDeploymentAllowed($instance, $release);
+        $this->promotions->assertRunMatchesRelease($run, $release);
         $originalPlan = $run->deployment_plan; $freshPlan = $this->plans->build($instance, $release, ['path' => $originalPlan['staging_path'], 'manifest' => $release->artifact_manifest_json]);
         if ($freshPlan['status'] !== 'DEPLOYMENT_READY' || $freshPlan['files_to_create'] !== $originalPlan['files_to_create'] || $freshPlan['files_to_replace'] !== $originalPlan['files_to_replace']) throw new RuntimeException('La instancia cambió después del dry-run.');
         $databaseAttempted = false;

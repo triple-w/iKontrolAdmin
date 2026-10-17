@@ -132,7 +132,9 @@ class VersionManagerPhaseOneTest extends TestCase
     private function makeInstance(string $channel): IkontrolInstance
     {
         $client = Client::create(['name' => 'Cliente '.$channel]);
-        return IkontrolInstance::create(['client_id' => $client->id, 'name' => 'Instancia '.$channel, 'slug' => 'instance_'.$channel, 'folder_name' => 'instance_'.$channel, 'db_name' => 'db_'.$channel, 'current_version' => '1.0.0', 'update_channel' => $channel, 'installation_status' => InstallationStatus::Ready, 'active' => true]);
+        $instance = IkontrolInstance::create(['client_id' => $client->id, 'name' => 'Instancia '.$channel, 'slug' => 'instance_'.$channel, 'folder_name' => 'instance_'.$channel, 'db_name' => 'db_'.$channel, 'current_version' => '1.0.0', 'update_channel' => $channel, 'installation_status' => InstallationStatus::Ready, 'active' => true]);
+        config(['ikontrol.release_deployment.golden_instance_id' => $instance->id]);
+        return $instance;
     }
 
     private function release(string $version, string $channel, array $from): IkontrolRelease

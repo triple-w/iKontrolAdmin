@@ -27,7 +27,7 @@ final class DeploymentPlanService
         $free = @disk_free_space($root); $required = max($bytes * 3, 10485760);
         $databasePreflight = $instance->database_status === 'READY' ? 'READY' : 'BLOCKED';
         $state = $protected || $databasePreflight !== 'READY' || ($free !== false && $free < $required) ? 'DEPLOYMENT_BLOCKED' : ($conflicts ? 'DEPLOYMENT_CONFLICT' : 'DEPLOYMENT_READY');
-        return ['status' => $state, 'source_version' => $instance->detected_version ?: $instance->current_version, 'target_version' => $release->version, 'commit_sha' => $release->commit_sha, 'files_to_create' => $create, 'files_to_replace' => $replace, 'protected_files' => $protected, 'local_conflicts' => $conflicts, 'database_preflight' => $databasePreflight, 'required_disk_space' => $required, 'available_disk_space' => $free, 'staging_path' => $staged['path'], 'backup_path' => null];
+        return ['status' => $state, 'release_id' => $release->id, 'source_version' => $instance->detected_version ?: $instance->current_version, 'target_version' => $release->version, 'commit_sha' => $release->commit_sha, 'artifact_sha256' => $release->artifact_sha256, 'files_to_create' => $create, 'files_to_replace' => $replace, 'protected_files' => $protected, 'local_conflicts' => $conflicts, 'database_preflight' => $databasePreflight, 'required_disk_space' => $required, 'available_disk_space' => $free, 'staging_path' => $staged['path'], 'backup_path' => null];
     }
 
     private function baseManifest(IkontrolInstance $instance): array

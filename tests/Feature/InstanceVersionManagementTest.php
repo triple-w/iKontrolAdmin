@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\InstallationStatus;
-use App\Models\{AdminUser, Client, IkontrolInstance, IkontrolUpgradeAudit};
+use App\Models\{AdminUser, Client, IkontrolInstance, IkontrolRelease, IkontrolUpgradeAudit};
 use App\Services\{AllowedSparkRunner, ManagedCommandJsonProtocol};
 use App\Services\Upgrade\InstanceVersionManagementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -128,6 +128,13 @@ class InstanceVersionManagementTest extends TestCase
         $admin = AdminUser::create(['name' => 'Admin', 'email' => 'upgrade@example.test', 'password' => 'a-secure-test-password', 'active' => true]);
         $instance = $this->makeInstance('confirmed', ['detected_version' => '1.1.3', 'upgrade_status' => 'UPDATE_AVAILABLE']);
         $audit = $this->audit($instance, 'PLAN_READY');
+        config(['ikontrol.release_deployment.golden_instance_id' => $instance->id]);
+        IkontrolRelease::create([
+            'version' => '1.1.4', 'release_identifier' => 'ikontrol-1.1.4-test', 'channel' => 'stable',
+            'git_tag' => 'v1.1.4', 'source_ref' => 'v1.1.4', 'commit_sha' => str_repeat('a', 40),
+            'source_repository' => 'triple-w/ikontrol-platform', 'artifact_sha256' => str_repeat('b', 64),
+            'manifest_json' => ['from_versions' => ['1.1.3']], 'status' => 'validated', 'promotion_status' => 'BUILT',
+        ]);
 
         $this->actingAs($admin)->post(route('instances.upgrade.execute', [$instance, $audit]), ['confirmation' => 'wrong'])->assertSessionHasErrors('confirmation');
         $this->assertDatabaseMissing('admin_audit_logs', ['action' => 'INSTANCE_UPGRADE_EXECUTION_STARTED']);

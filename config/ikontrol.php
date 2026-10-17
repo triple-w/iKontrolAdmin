@@ -26,6 +26,7 @@ return [
         'canonical_version' => env('IKONTROL_CANONICAL_VERSION', '1.1.5'),
     ],
     'release_deployment' => [
+        'golden_instance_id' => env('IKONTROL_GOLDEN_INSTANCE_ID'),
         'artifact_root' => env('IKONTROL_RELEASE_ARTIFACT_ROOT', storage_path('app/ikontrol-releases/artifacts')),
         'staging_root' => env('IKONTROL_RELEASE_STAGING_ROOT', storage_path('app/ikontrol-releases/staging')),
         'backup_root' => env('IKONTROL_RELEASE_BACKUP_ROOT', storage_path('app/ikontrol-releases/backups')),

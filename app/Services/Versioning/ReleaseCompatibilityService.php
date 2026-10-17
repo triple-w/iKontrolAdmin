@@ -6,10 +6,13 @@ use App\Models\{IkontrolInstance, IkontrolRelease};
 
 class ReleaseCompatibilityService
 {
+    public function __construct(private readonly ReleasePromotionService $promotions) {}
+
     public function isCompatible(IkontrolInstance $instance, IkontrolRelease $release): bool
     {
         $current = $instance->current_version ?: $instance->installed_version ?: $instance->detected_version ?: $instance->app_version;
         if (! is_string($current) || $current === '' || $release->status !== 'validated') return false;
+        try { $this->promotions->assertDeploymentAllowed($instance, $release); } catch (\Throwable) { return false; }
         if (($instance->update_channel ?: 'stable') === 'stable' && $release->channel !== 'stable') return false;
         if (version_compare($release->version, $current, '<=')) return false;
         return in_array($current, $release->manifest_json['from_versions'] ?? [], true);

@@ -6,7 +6,7 @@ use App\Enums\InstallationStatus;
 use App\Models\{AdminUser, Client, IkontrolInstance, IkontrolRelease, InstanceUpdateRun};
 use App\Services\{AllowedSparkRunner, ManagedCommandJsonProtocol};
 use App\Services\Upgrade\InstanceVersionManagementService;
-use App\Services\Versioning\{DeploymentPlanService, ReleaseArtifactService, ReleaseCompatibilityService, ReleaseDeploymentService, StagedFileDeploymentService};
+use App\Services\Versioning\{DeploymentPlanService, ReleaseArtifactService, ReleaseCompatibilityService, ReleaseDeploymentService, ReleasePromotionService, StagedFileDeploymentService};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Mockery;
@@ -67,6 +67,16 @@ class ReleaseCodeDeploymentTest extends TestCase
         [$instance, $release] = $this->fixture(); $before = $this->snapshot($instance->absolute_path);
         $run = $this->deployment($this->runner())->prepare($instance, $release);
         $this->assertSame('DEPLOYMENT_READY', $run->status); $this->assertNotEmpty($run->deployment_plan['staging_path']); $this->assertNotEmpty($run->deployment_plan['backup_path']); $this->assertSame($before, $this->snapshot($instance->absolute_path));
+    }
+
+    public function test_built_release_can_prepare_on_configured_golden(): void
+    {
+        [$instance, $release] = $this->fixture();
+        $this->assertSame('BUILT', $release->promotion_status);
+        $run = $this->deployment($this->runner())->prepare($instance, $release);
+        $this->assertSame('DEPLOYMENT_READY', $run->status);
+        $this->assertSame($release->commit_sha, $run->release_commit_sha);
+        $this->assertSame($release->artifact_sha256, $run->release_artifact_sha256);
     }
 
     public function test_plan_detects_new_file(): void { [$instance, $release] = $this->fixture(); $plan = $this->preparedPlan($instance, $release); $this->assertContains('new.php', array_column($plan['files_to_create'], 'path')); }
@@ -156,7 +166,7 @@ class ReleaseCodeDeploymentTest extends TestCase
     private function fixture(array $extraEntries = [], array $extraManaged = []): array
     {
         $client=Client::create(['name'=>'Release Client']); $path=$this->root.'/golden'; File::ensureDirectoryExists($path.'/app'); File::put($path.'/app/Test.php','base'); File::put($path.'/spark','spark'); File::put($path.'/index.php','index');
-        $instance=IkontrolInstance::create(['client_id'=>$client->id,'name'=>'Golden','slug'=>'golden','folder_name'=>'golden','absolute_path'=>$path,'db_name'=>'golden_db','detected_version'=>'1.1.4','current_version'=>'1.1.4','canonical_version'=>'1.1.5','database_status'=>'READY','upgrade_status'=>'UPDATE_AVAILABLE','installation_origin'=>'EXISTING','installation_status'=>InstallationStatus::Ready,'active'=>true]);
+        $instance=IkontrolInstance::create(['client_id'=>$client->id,'name'=>'Golden','slug'=>'golden','folder_name'=>'golden','absolute_path'=>$path,'db_name'=>'golden_db','detected_version'=>'1.1.4','current_version'=>'1.1.4','canonical_version'=>'1.1.5','database_status'=>'READY','upgrade_status'=>'UPDATE_AVAILABLE','installation_origin'=>'EXISTING','installation_status'=>InstallationStatus::Ready,'active'=>true]); config(['ikontrol.release_deployment.golden_instance_id'=>$instance->id]);
         IkontrolRelease::create(['version'=>'1.1.4','release_identifier'=>'ikontrol-1.1.4','channel'=>'stable','git_tag'=>'v1.1.4','source_ref'=>'v1.1.4','commit_sha'=>str_repeat('a',40),'source_repository'=>'triple-w/ikontrol-platform','manifest_json'=>['from_versions'=>['1.1.3']],'artifact_manifest_json'=>['files'=>[['path'=>'app/Test.php','sha256'=>hash('sha256','base'),'size'=>4],['path'=>'spark','sha256'=>hash('sha256','spark'),'size'=>5],['path'=>'index.php','sha256'=>hash('sha256','index'),'size'=>5]]],'status'=>'validated']);
         $managed=array_merge(['app/Test.php'=>'target','spark'=>'spark','index.php'=>'index','new.php'=>'new'],$extraManaged); $commit=str_repeat('b',40); $releaseId='ikontrol-1.1.5-canonical-stamp-wallet-resolution';
         $sourceHashes=['app/Test.php'=>hash('sha256','base'),'spark'=>hash('sha256','spark'),'index.php'=>hash('sha256','index')]; $manifest=['schema_version'=>1,'product'=>'ikontrol','version'=>'1.1.5','release_id'=>$releaseId,'commit_sha'=>$commit,'files'=>[]]; foreach($managed as $name=>$body)$manifest['files'][]=['path'=>$name,'sha256'=>hash('sha256',$body),'size'=>strlen($body)]+(isset($sourceHashes[$name])?['from_sha256'=>['1.1.4'=>$sourceHashes[$name]]]:[]);
@@ -168,7 +178,7 @@ class ReleaseCodeDeploymentTest extends TestCase
     private function updateRun(IkontrolInstance $instance, IkontrolRelease $release): InstanceUpdateRun { return InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'preflight']); }
     private function preparedPlan(IkontrolInstance $instance, IkontrolRelease $release): array { return $this->deployment($this->runner())->prepare($instance,$release)->deployment_plan; }
     private function runner() { return Mockery::mock(AllowedSparkRunner::class); }
-    private function deployment($runner): ReleaseDeploymentService { $versions=new InstanceVersionManagementService($runner,app(ManagedCommandJsonProtocol::class)); return new ReleaseDeploymentService(app(ReleaseArtifactService::class),app(DeploymentPlanService::class),app(StagedFileDeploymentService::class),app(ReleaseCompatibilityService::class),$runner,app(ManagedCommandJsonProtocol::class),$versions); }
+    private function deployment($runner): ReleaseDeploymentService { $versions=new InstanceVersionManagementService($runner,app(ManagedCommandJsonProtocol::class)); return new ReleaseDeploymentService(app(ReleaseArtifactService::class),app(DeploymentPlanService::class),app(StagedFileDeploymentService::class),app(ReleaseCompatibilityService::class),app(ReleasePromotionService::class),$runner,app(ManagedCommandJsonProtocol::class),$versions); }
     private function process(array $payload): array { return ['exit_code'=>0,'stdout'=>"IKONTROL_JSON_BEGIN\n".json_encode($payload,JSON_THROW_ON_ERROR)."\nIKONTROL_JSON_END",'stderr'=>'']; }
     private function successfulRunner($runner, IkontrolInstance $instance): void { $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('runUpgradePlan')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'READY','compatible'=>true])); $runner->shouldReceive('executeUpgrade')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'COMPLETED'])); $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:baseline-check')->andReturn($this->process(['status'=>'FAIL'])); }
     private function snapshot(string $path): array { $result=[]; foreach(File::allFiles($path) as$file)$result[str_replace('\\','/',$file->getRelativePathname())]=hash_file('sha256',$file->getPathname()); ksort($result); return $result; }

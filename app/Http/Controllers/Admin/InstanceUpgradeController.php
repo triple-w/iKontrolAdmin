@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\{IkontrolInstance, IkontrolRelease, IkontrolUpgradeAudit, InstanceUpdateRun};
 use App\Services\AuditService;
 use App\Services\Upgrade\{InstanceUpgradeAuditService, InstanceVersionManagementService};
-use App\Services\Versioning\ReleaseDeploymentService;
+use App\Services\Versioning\{ReleaseDeploymentService, ReleasePromotionService};
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -26,10 +26,11 @@ class InstanceUpgradeController extends Controller
         }
     }
 
-    public function showDeployment(IkontrolInstance $instance, InstanceUpdateRun $updateRun)
+    public function showDeployment(IkontrolInstance $instance, InstanceUpdateRun $updateRun, ReleasePromotionService $promotions)
     {
         $this->runBelongsTo($updateRun, $instance); $updateRun->load('release');
-        return view('admin.instances.deployment-run', compact('instance', 'updateRun'));
+        try { $promotions->assertDeploymentAllowed($instance, $updateRun->release); $deploymentAllowed = true; } catch (Throwable) { $deploymentAllowed = false; }
+        return view('admin.instances.deployment-run', compact('instance', 'updateRun', 'deploymentAllowed'));
     }
 
     public function executeDeployment(IkontrolInstance $instance, InstanceUpdateRun $updateRun, Request $request, ReleaseDeploymentService $service, AuditService $audit)
@@ -88,11 +89,12 @@ class InstanceUpgradeController extends Controller
         }
     }
 
-    public function execute(IkontrolInstance $instance, IkontrolUpgradeAudit $upgradeAudit, Request $request, InstanceVersionManagementService $service, AuditService $audit)
+    public function execute(IkontrolInstance $instance, IkontrolUpgradeAudit $upgradeAudit, Request $request, InstanceVersionManagementService $service, AuditService $audit, ReleasePromotionService $promotions)
     {
         $this->confirmation($request, $instance); $this->belongsTo($upgradeAudit, $instance);
         $audit->record('INSTANCE_UPGRADE_EXECUTION_STARTED', 'Actualización dirigida confirmada; se verificará nuevamente el plan.', $instance, ['upgrade_audit_id' => $upgradeAudit->id, 'target_version' => $upgradeAudit->target_version]);
         try {
+            $promotions->assertVersionDeploymentAllowed($instance, (string) $upgradeAudit->target_version);
             $service->executeUpgrade($instance, $upgradeAudit);
             $audit->record('INSTANCE_UPGRADE_EXECUTION_COMPLETED', 'Actualización dirigida completada y reinspeccionada.', $instance, ['upgrade_audit_id' => $upgradeAudit->id]);
             return redirect()->route('instances.show', [$instance, 'tab' => 'upgrade'])->with('success', 'Instancia actualizada y reinspeccionada.');
@@ -130,10 +132,16 @@ class InstanceUpgradeController extends Controller
         }
     }
 
-    public function show(IkontrolInstance $instance, IkontrolUpgradeAudit $upgradeAudit)
+    public function show(IkontrolInstance $instance, IkontrolUpgradeAudit $upgradeAudit, ReleasePromotionService $promotions)
     {
         $this->belongsTo($upgradeAudit, $instance); $upgradeAudit->load('items');
-        return view('admin.instances.upgrade-audit', compact('instance', 'upgradeAudit'));
+        try {
+            $promotions->assertVersionDeploymentAllowed($instance, (string) $upgradeAudit->target_version);
+            $upgradeExecutionAllowed = true;
+        } catch (Throwable) {
+            $upgradeExecutionAllowed = false;
+        }
+        return view('admin.instances.upgrade-audit', compact('instance', 'upgradeAudit', 'upgradeExecutionAllowed'));
     }
 
     public function dryRun(IkontrolInstance $instance, IkontrolUpgradeAudit $upgradeAudit, InstanceUpgradeAuditService $service, AuditService $audit)

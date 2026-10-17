@@ -4,17 +4,21 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\IkontrolTemplateRequest;
-use App\Models\{IkontrolRelease, IkontrolTemplate, IkontrolVersion};
+use App\Models\{AdminUser, IkontrolRelease, IkontrolTemplate, IkontrolVersion, InstanceUpdateRun};
 use App\Services\{AuditService, IkontrolTemplateValidationService};
-use App\Services\Versioning\ReleaseSyncService;
+use App\Services\Versioning\{GoldenInstanceResolver, ReleasePromotionService, ReleaseSyncService};
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class IkontrolVersionController extends Controller
 {
     public function index(IkontrolTemplateValidationService $validator)
     {
-        $releases = IkontrolRelease::orderByDesc('published_at')->orderByDesc('id')->get();
+        $releases = IkontrolRelease::with(['latestPromotion.actor', 'latestPromotion.updateRun'])->orderByDesc('published_at')->orderByDesc('id')->get();
         $templates = IkontrolTemplate::latest()->get();
         $validity = $templates->mapWithKeys(function (IkontrolTemplate $template) use ($validator) {
             try { $validator->validate($template); return [$template->id => true]; } catch (\Throwable) { return [$template->id => false]; }
@@ -34,9 +38,64 @@ class IkontrolVersionController extends Controller
         }
     }
 
-    public function manifest(IkontrolRelease $release)
+    public function manifest(IkontrolRelease $release, GoldenInstanceResolver $golden, ReleasePromotionService $promotions)
     {
-        return view('admin.versions.manifest', compact('release'));
+        $release->load(['promotions.actor', 'promotions.updateRun.instance']);
+        try { $goldenInstance = $golden->resolve(); } catch (Throwable) { $goldenInstance = null; }
+        $goldenRuns = $goldenInstance
+            ? $release->updateRuns()->where('instance_id', $goldenInstance->id)->whereIn('status', ['completed', 'SUCCESS'])->where('release_commit_sha', $release->commit_sha)->where('release_artifact_sha256', $release->artifact_sha256)->latest('id')->get()
+            : collect();
+        $approvalCurrent = $promotions->hasCurrentApproval($release);
+
+        return view('admin.versions.manifest', compact('release', 'goldenInstance', 'goldenRuns', 'approvalCurrent'));
+    }
+
+    public function promoteToStaging(IkontrolRelease $release, Request $request, ReleasePromotionService $promotions, AuditService $audit)
+    {
+        $data = $request->validate(['instance_update_run_id' => ['required', 'integer', 'exists:instance_update_runs,id'], 'notes' => ['nullable', 'string', 'max:2000']]);
+        $actor = $this->actor($request);
+        try {
+            $event = $promotions->promoteToStaging($release, InstanceUpdateRun::findOrFail($data['instance_update_run_id']), $actor, $data['notes'] ?? null);
+            $audit->record('RELEASE_PROMOTED_TO_STAGING', 'Release promovida a STAGING con evidencia de Golden.', $release, ['release_promotion_id' => $event->id, 'instance_update_run_id' => $event->instance_update_run_id]);
+            return back()->with('success', 'Release promovida a STAGING.');
+        } catch (Throwable $e) {
+            $audit->record('RELEASE_PROMOTION_REJECTED', 'Promoción a STAGING rechazada por una regla de dominio.', $release, ['instance_update_run_id' => $data['instance_update_run_id']]);
+            return back()->with('error', $this->promotionError($e));
+        }
+    }
+
+    public function approve(IkontrolRelease $release, Request $request, ReleasePromotionService $promotions, AuditService $audit)
+    {
+        $data = $request->validate([
+            'instance_update_run_id' => ['required', 'integer', 'exists:instance_update_runs,id'],
+            'confirmation' => ['required', 'string', Rule::in([(string) $release->release_identifier])],
+            'evidence' => ['required', 'array', 'min:1'],
+            'evidence.*' => ['required', 'string', 'distinct', Rule::in(ReleasePromotionService::APPROVAL_CHECKLIST)],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $actor = $this->actor($request);
+        try {
+            $event = $promotions->approve($release, InstanceUpdateRun::findOrFail($data['instance_update_run_id']), $actor, $data['confirmation'], $data['evidence'], $data['notes'] ?? null);
+            $audit->record('RELEASE_APPROVED', 'Release aprobada manualmente después de validación Golden.', $release, ['release_promotion_id' => $event->id, 'instance_update_run_id' => $event->instance_update_run_id, 'evidence' => $event->evidence]);
+            return back()->with('success', 'Release APPROVED para instancias no-Golden.');
+        } catch (Throwable $e) {
+            $audit->record('RELEASE_APPROVAL_REJECTED', 'Aprobación de release rechazada por una regla de dominio.', $release, ['instance_update_run_id' => $data['instance_update_run_id']]);
+            return back()->with('error', $this->promotionError($e));
+        }
+    }
+
+    public function deprecate(IkontrolRelease $release, Request $request, ReleasePromotionService $promotions, AuditService $audit)
+    {
+        $data = $request->validate(['confirmation' => ['required', 'string', Rule::in([(string) $release->release_identifier])], 'notes' => ['required', 'string', 'max:2000']]);
+        $actor = $this->actor($request);
+        try {
+            $event = $promotions->deprecate($release, $actor, $data['confirmation'], $data['notes']);
+            $audit->record('RELEASE_DEPRECATED', 'Release deprecada; nuevos deployments bloqueados.', $release, ['release_promotion_id' => $event->id]);
+            return back()->with('success', 'Release DEPRECATED.');
+        } catch (Throwable $e) {
+            $audit->record('RELEASE_DEPRECATION_REJECTED', 'Deprecación rechazada por una regla de dominio.', $release);
+            return back()->with('error', $this->promotionError($e));
+        }
     }
 
     public function create() { return view('admin.versions.form', ['template' => new IkontrolTemplate(), 'legacyVersion' => null]); }
@@ -80,5 +139,19 @@ class IkontrolVersionController extends Controller
             throw ValidationException::withMessages([$field => $message]);
         }
         return DB::transaction(function () use ($template, $data) { if ($data['is_default']) IkontrolTemplate::query()->when($template->exists, fn ($q) => $q->whereKeyNot($template->id))->update(['is_default' => false]); $template->fill($data)->save(); return $template; });
+    }
+
+    private function actor(Request $request): AdminUser
+    {
+        $actor = $request->user();
+        abort_unless($actor instanceof AdminUser, 403);
+        return $actor;
+    }
+
+    private function promotionError(Throwable $error): string
+    {
+        if ($error instanceof RuntimeException) return $error->getMessage();
+        report($error);
+        return 'La transición no pudo completarse de forma segura.';
     }
 }

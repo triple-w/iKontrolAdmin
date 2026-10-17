@@ -30,7 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/dry-run', [InstanceUpgradeController::class, 'dryRun'])->middleware('throttle:5,1')->name('instances.upgrade-audits.dry-run');
     Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/execute', [InstanceUpgradeController::class, 'execute'])->middleware('throttle:2,1')->name('instances.upgrade.execute');
     Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/adopt', [InstanceUpgradeController::class, 'adopt'])->middleware('throttle:2,1')->name('instances.adoption.execute');
-    Route::post('/instances/{instance}/operations/{operation}', [InstanceOperationController::class, 'run'])->whereIn('operation',['files','database','reassign-user','key','cache','migrate','health'])->middleware('throttle:10,1')->name('instances.operations.run');
+    Route::post('/instances/{instance}/operations/{operation}', [InstanceOperationController::class, 'run'])->whereIn('operation',['files','database','reassign-user','key','cache','health'])->middleware('throttle:10,1')->name('instances.operations.run');
     Route::post('/instances/{instance}/administrators/{operation}', [InstanceOperationController::class, 'admin'])->whereIn('operation',['create','reset'])->middleware('throttle:5,1')->name('instances.operations.admin');
     Route::post('/instances/{instance}/stamps', [InstanceDiagnosticsController::class,'stamps'])->middleware('throttle:5,1')->name('instances.stamps.move');
     Route::get('/instances/{instance}/logs/{file}', [InstanceDiagnosticsController::class,'log'])->where('file','[A-Za-z0-9._-]+\\.log')->middleware('throttle:30,1')->name('instances.logs.show');
@@ -51,6 +51,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/versions', [IkontrolVersionController::class, 'index'])->name('versions.index');
     Route::post('/versions/sync', [IkontrolVersionController::class, 'sync'])->middleware('throttle:3,1')->name('versions.sync');
     Route::get('/versions/releases/{release}/manifest', [IkontrolVersionController::class, 'manifest'])->name('versions.releases.manifest');
+    Route::post('/versions/releases/{release}/promote-staging', [IkontrolVersionController::class, 'promoteToStaging'])->middleware('throttle:3,1')->name('versions.releases.promote-staging');
+    Route::post('/versions/releases/{release}/approve', [IkontrolVersionController::class, 'approve'])->middleware('throttle:3,1')->name('versions.releases.approve');
+    Route::post('/versions/releases/{release}/deprecate', [IkontrolVersionController::class, 'deprecate'])->middleware('throttle:3,1')->name('versions.releases.deprecate');
     Route::get('/versions/create', [IkontrolVersionController::class, 'create'])->name('versions.create');
     Route::post('/versions', [IkontrolVersionController::class, 'store'])->name('versions.store');
     Route::get('/versions/templates/{template}/edit', [IkontrolVersionController::class, 'editTemplate'])->name('versions.templates.edit');
