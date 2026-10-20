@@ -8,7 +8,7 @@ use LogicException;
 
 class InstanceUpdateRun extends Model
 {
-    public const STATUSES = ['pending', 'preflight', 'DEPLOYMENT_READY', 'DEPLOYMENT_CONFLICT', 'DEPLOYMENT_BLOCKED', 'backup', 'deploying', 'migrating', 'commands', 'health_check', 'completed', 'failed', 'rolled_back', 'MANUAL_REVIEW_REQUIRED'];
+    public const STATUSES = ['pending', 'preflight', 'DEPLOYMENT_READY', 'DEPLOYMENT_CONFLICT', 'DEPLOYMENT_BLOCKED', 'backup', 'deploying', 'migrating', 'commands', 'health_check', 'completed', 'failed', 'rolled_back', 'CODE_ROLLED_BACK_DB_ADVANCED', 'PARTIAL_CODE_DEPLOYMENT', 'MANUAL_REVIEW_REQUIRED', 'RECOVERY_VERIFIED_SOURCE', 'RECOVERY_VERIFIED_TARGET'];
 
     protected $fillable = [
         'instance_id', 'from_version', 'to_version', 'release_id', 'release_commit_sha', 'release_artifact_sha256', 'status',

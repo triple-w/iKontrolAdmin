@@ -39,18 +39,21 @@ Se rechazan paths absolutos, `..`, NUL, drive letters, symlinks, duplicados, dem
 
 El dry-run sólo escribe staging y auditoría de Admin, nunca la instancia. Antes del deploy se repite el plan. Cada reemplazo se copia a un temporal junto al destino, se verifica y se activa mediante rename. Los archivos reemplazados se respaldan con checksum antes de modificar.
 
-Ante fallo se restauran sólo archivos cuyo checksum continúa siendo el desplegado y se eliminan sólo archivos creados por esa ejecución que conservan su checksum. Una divergencia produce `MANUAL_REVIEW_REQUIRED`. Si ya se invocó `ikontrol:upgrade`, también se marca `database_review_required`; nunca se revierte esquema o datos automáticamente.
+Ante fallo se restauran sólo archivos cuyo checksum continúa siendo el desplegado y se eliminan sólo archivos creados por esa ejecución que conservan su checksum. El resultado queda como `CODE_ROLLBACK_VERIFIED` o `CODE_ROLLBACK_INCOMPLETE`; una divergencia produce `PARTIAL_CODE_DEPLOYMENT` o `MANUAL_REVIEW_REQUIRED`. Si la BD avanzó y el código quedó restaurado se registra `CODE_ROLLED_BACK_DB_ADVANCED`. Nunca se revierte esquema o datos automáticamente.
 
 ## Estados
 
 - `DEPLOYMENT_READY`: dry-run sin conflictos y espacio suficiente.
 - `DEPLOYMENT_CONFLICT`: modificación local administrada.
 - `DEPLOYMENT_BLOCKED`: archivo protegido, falta de espacio o condición estructural.
-- `failed`: fallo anterior a cambios potenciales de base y rollback verificable.
-- `MANUAL_REVIEW_REQUIRED`: rollback no garantizable o upgrade dirigido ya iniciado.
-- `completed`: código, upgrade y reinspección confirmaron el destino.
+- `failed`: fallo anterior a cambios potenciales de base.
+- `PARTIAL_CODE_DEPLOYMENT`: uno o más hashes finales no permiten garantizar el rollback de código.
+- `CODE_ROLLED_BACK_DB_ADVANCED`: código origen restaurado y verificado, pero BD en versión destino.
+- `MANUAL_REVIEW_REQUIRED`: estado de código o BD incompatible o resultado no demostrable.
+- `RECOVERY_VERIFIED_SOURCE` / `RECOVERY_VERIFIED_TARGET`: operador confirmó y Admin verificó versiones y hashes sin modificar Platform.
+- `completed`: código, BD, upgrade y reinspección confirmaron el destino.
 
-Baseline es informativo: `FAIL` no invalida el éxito si `current_version` es `1.1.5` y database-check está `READY`.
+Baseline es informativo: `FAIL` no invalida por sí solo el éxito, pero `database-check = READY` tampoco basta. Código canónico, versión registrada en BD y hashes deben coincidir con el destino.
 
 ## Primera validación con Golden
 

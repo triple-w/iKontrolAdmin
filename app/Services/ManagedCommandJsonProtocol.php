@@ -12,8 +12,11 @@ final class ManagedCommandJsonProtocol
     public function decodeProcess(array $process): array
     {
         $executionId = (string) ($process['execution_id'] ?? strtoupper(bin2hex(random_bytes(4))));
+        if (($process['timed_out'] ?? false) === true) {
+            throw new RuntimeException('stage=COMMAND_EXECUTION reason=TIMEOUT timeout_seconds='.(string) ($process['timeout_seconds'] ?? 'unknown').' execution_id='.$executionId.' stdout_tail='.$this->tail($process['stdout_tail'] ?? $process['stdout'] ?? '').' stderr_tail='.$this->tail($process['stderr_tail'] ?? $process['stderr'] ?? ''));
+        }
         if (($process['exit_code'] ?? 1) !== 0) {
-            throw new RuntimeException('stage=COMMAND_EXECUTION reason=COMMAND_EXECUTION_FAILED exit_code='.(string) ($process['exit_code'] ?? 'unknown').' execution_id='.$executionId.' stderr_tail='.$this->tail($process['stderr_tail'] ?? $process['stderr'] ?? ''));
+            throw new RuntimeException('stage=COMMAND_EXECUTION reason=COMMAND_EXECUTION_FAILED exit_code='.(string) ($process['exit_code'] ?? 'unknown').' execution_id='.$executionId.' stdout_tail='.$this->tail($process['stdout_tail'] ?? $process['stdout'] ?? '').' stderr_tail='.$this->tail($process['stderr_tail'] ?? $process['stderr'] ?? ''));
         }
 
         $stdout = (string) ($process['stdout'] ?? $process['output'] ?? '');
@@ -84,7 +87,7 @@ final class ManagedCommandJsonProtocol
         foreach ([(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')] as $secret) {
             if ($secret !== '') $value = str_replace($secret, '[REDACTED]', $value);
         }
-        $value = preg_replace(['/(password|token|secret|authorization)\s*[=:]\s*[^\s,;]+/i', '/bearer\s+[^\s]+/i'], ['$1=[REDACTED]', 'Bearer [REDACTED]'], $value) ?? '';
+        $value = preg_replace(['/(password|token|secret|authorization|app_key|encryption\.key|private_key|certificate|csd_password)\s*[=:]\s*[^\s,;]+/i', '/bearer\s+[^\s]+/i', '/-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----.*?-----END [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/is'], ['$1=[REDACTED]', 'Bearer [REDACTED]', '[REDACTED PEM]'], $value) ?? '';
         return mb_substr($value, -300);
     }
 }

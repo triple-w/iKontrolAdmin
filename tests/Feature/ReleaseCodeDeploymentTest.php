@@ -111,7 +111,7 @@ class ReleaseCodeDeploymentTest extends TestCase
     {
         [$instance, $release] = $this->fixture([], ['z/new.php' => 'new']); $run = $this->deployment($this->runner())->prepare($instance, $release); File::put($instance->absolute_path.'/z', 'blocks directory');
         try { app(StagedFileDeploymentService::class)->deploy($instance, $run, $run->deployment_plan); $this->fail('Deployment should fail.'); } catch (\Throwable) {}
-        $this->assertSame('base', File::get($instance->absolute_path.'/app/Test.php')); $this->assertSame('CODE_ROLLBACK_AVAILABLE', $run->fresh()->rollback_status);
+        $this->assertSame('base', File::get($instance->absolute_path.'/app/Test.php')); $this->assertSame('CODE_ROLLBACK_VERIFIED', $run->fresh()->rollback_status);
     }
 
     public function test_post_deploy_runs_version_plan_upgrade_and_accepts_failed_baseline(): void
@@ -120,6 +120,124 @@ class ReleaseCodeDeploymentTest extends TestCase
         $this->successfulRunner($runner, $instance);
         $service->execute($instance, $run);
         $this->assertSame('completed', $run->fresh()->status); $this->assertSame('CURRENT', $instance->fresh()->upgrade_status); $this->assertSame('FAIL', $instance->fresh()->baseline_status);
+    }
+
+    public function test_failed_upgrade_after_database_advanced_records_evidence_and_verified_rollback(): void
+    {
+        [$instance,$release]=$this->fixture(); $runner=$this->runner(); $service=$this->deployment($runner); $run=$service->prepare($instance,$release);
+        $this->failureRunner($runner,$instance,$this->process(['status'=>'FAILED','message'=>'migration completed; password=visible']));
+        try{$service->execute($instance,$run);$this->fail('Upgrade should fail.');}catch(RuntimeException){}
+        $run->refresh(); $evidence=json_decode($run->log,true);
+        $this->assertSame('CODE_ROLLED_BACK_DB_ADVANCED',$run->status);
+        $this->assertSame('CODE_ROLLBACK_VERIFIED',$run->rollback_status);
+        $this->assertTrue($run->database_review_required);
+        $this->assertSame('base',File::get($instance->absolute_path.'/app/Test.php'));
+        $this->assertFileDoesNotExist($instance->absolute_path.'/new.php');
+        $this->assertSame('1.1.4',data_get($evidence,'version_states.after_rollback.code_version'));
+        $this->assertSame('1.1.5',data_get($evidence,'version_states.after_rollback.database_version'));
+        $this->assertFalse(data_get($evidence,'recovery.retry_safe'));
+        $this->assertStringNotContainsString('visible',$run->error_message.$run->log);
+    }
+
+    public function test_nonzero_upgrade_exit_is_preserved_and_sanitized(): void
+    {
+        [$instance,$release]=$this->fixture(); $runner=$this->runner(); $service=$this->deployment($runner); $run=$service->prepare($instance,$release);
+        config(['ikontrol.cpanel.token'=>'top-secret-token']);
+        $failed=['execution_id'=>'FAIL0001','command'=>['php','spark','ikontrol:upgrade','--target=1.1.5','--yes','--json'],'exit_code'=>2,'stdout'=>'partial result','stderr'=>'token=top-secret-token failure','stdout_tail'=>'partial result','stderr_tail'=>'token=top-secret-token failure','timed_out'=>false,'timeout_seconds'=>300];
+        $this->failureRunner($runner,$instance,$failed,'1.1.4');
+        try{$service->execute($instance,$run);$this->fail('Upgrade should fail.');}catch(RuntimeException){}
+        $run->refresh(); $evidence=json_decode($run->log,true);
+        $this->assertSame(2,data_get($evidence,'processes.directed_upgrade.exit_code'));
+        $this->assertSame(['php','spark','ikontrol:upgrade','--target=1.1.5','--yes','--json'],data_get($evidence,'processes.directed_upgrade.command'));
+        $this->assertStringContainsString('COMMAND_EXECUTION_FAILED',$run->error_message);
+        $this->assertStringNotContainsString('top-secret-token',$run->log.$run->error_message);
+    }
+
+    public function test_upgrade_timeout_is_preserved_as_process_evidence(): void
+    {
+        [$instance,$release]=$this->fixture(); $runner=$this->runner(); $service=$this->deployment($runner); $run=$service->prepare($instance,$release);
+        $timeout=['execution_id'=>'TIME0001','command'=>['php','spark','ikontrol:upgrade','--target=1.1.5','--yes','--json'],'exit_code'=>null,'stdout'=>'','stderr'=>'timed out','stdout_tail'=>'','stderr_tail'=>'timed out','timed_out'=>true,'timeout_seconds'=>300,'exception'=>'process timed out'];
+        $this->failureRunner($runner,$instance,$timeout,'1.1.4');
+        try{$service->execute($instance,$run);$this->fail('Upgrade should time out.');}catch(RuntimeException){}
+        $run->refresh(); $evidence=json_decode($run->log,true);
+        $this->assertTrue(data_get($evidence,'processes.directed_upgrade.timed_out'));
+        $this->assertSame(300,data_get($evidence,'processes.directed_upgrade.timeout_seconds'));
+        $this->assertStringContainsString('reason=TIMEOUT',$run->error_message);
+    }
+
+    public function test_incomplete_rollback_is_classified_as_partial_code_deployment(): void
+    {
+        [$instance,$release]=$this->fixture(); $runner=$this->runner(); $service=$this->deployment($runner); $run=$service->prepare($instance,$release);
+        $this->failureRunner($runner,$instance,$this->process(['status'=>'FAILED']),'1.1.5',function()use($instance){File::put($instance->absolute_path.'/app/Test.php','unexpected-change');});
+        try{$service->execute($instance,$run);$this->fail('Upgrade should fail.');}catch(RuntimeException){}
+        $run->refresh(); $evidence=json_decode($run->log,true);
+        $this->assertSame('PARTIAL_CODE_DEPLOYMENT',$run->status);
+        $this->assertSame('CODE_ROLLBACK_INCOMPLETE',$run->rollback_status);
+        $this->assertNotEmpty(data_get($evidence,'rollback.failed'));
+    }
+
+    public function test_code_114_with_database_115_is_blocked_before_writing_files(): void
+    {
+        [$instance,$release]=$this->fixture(); $before=$this->snapshot($instance->absolute_path); $runner=$this->runner(); $service=$this->deployment($runner); $run=$service->prepare($instance,$release);
+        $runner->shouldReceive('inspectVersion')->once()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.4']));
+        try{$service->execute($instance,$run);$this->fail('Inconsistent state should be blocked.');}catch(RuntimeException){}
+        $this->assertSame($before,$this->snapshot($instance->absolute_path));
+        $this->assertSame('MANUAL_REVIEW_REQUIRED',$run->fresh()->status);
+        $this->assertTrue($run->fresh()->database_review_required);
+    }
+
+    public function test_second_prepare_is_blocked_while_manual_review_is_pending(): void
+    {
+        [$instance,$release]=$this->fixture();
+        InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'CODE_ROLLED_BACK_DB_ADVANCED']);
+        $this->expectException(RuntimeException::class);
+        $this->deployment($this->runner())->prepare($instance,$release);
+    }
+
+    public function test_verified_source_recovery_unblocks_a_new_prepare_without_changing_files(): void
+    {
+        [$instance,$release]=$this->fixture(); $before=$this->snapshot($instance->absolute_path);
+        $failed=InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'CODE_ROLLED_BACK_DB_ADVANCED','backup_manifest'=>$this->recoveryManifest()]);
+        $runner=$this->runner(); $runner->shouldReceive('inspectVersion')->once()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.4']));
+        $service=$this->deployment($runner); $verified=$service->verifyRecovery($instance,$failed,'source');
+        $this->assertSame('RECOVERY_VERIFIED_SOURCE',$verified->status);
+        $this->assertSame($before,$this->snapshot($instance->absolute_path));
+        $this->assertSame('DEPLOYMENT_READY',$service->prepare($instance,$release)->status);
+    }
+
+    public function test_target_recovery_requires_code_and_database_115_and_target_hashes(): void
+    {
+        [$instance,$release]=$this->fixture(); File::put($instance->absolute_path.'/app/Test.php','target'); File::put($instance->absolute_path.'/new.php','new');
+        $failed=InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'MANUAL_REVIEW_REQUIRED','backup_manifest'=>$this->recoveryManifest()]);
+        $runner=$this->runner(); $runner->shouldReceive('inspectVersion')->once()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.5']));
+        $verified=$this->deployment($runner)->verifyRecovery($instance,$failed,'target');
+        $this->assertSame('RECOVERY_VERIFIED_TARGET',$verified->status);
+        $this->assertSame('CURRENT',$instance->fresh()->upgrade_status);
+    }
+
+    public function test_recovery_verification_failure_keeps_run_blocked_and_records_actual_state(): void
+    {
+        [$instance,$release]=$this->fixture();
+        $failed=InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'CODE_ROLLED_BACK_DB_ADVANCED','backup_manifest'=>$this->recoveryManifest()]);
+        $runner=$this->runner(); $runner->shouldReceive('inspectVersion')->once()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.4']));
+        try{$this->deployment($runner)->verifyRecovery($instance,$failed,'source');$this->fail('Recovery should remain blocked.');}catch(RuntimeException){}
+        $failed->refresh(); $evidence=json_decode($failed->log,true);
+        $this->assertSame('CODE_ROLLED_BACK_DB_ADVANCED',$failed->status);
+        $this->assertSame('1.1.5',data_get($evidence,'version_states.recovery_verification.database_version'));
+        $this->assertNotEmpty(data_get($evidence,'recovery_verification_failure.error'));
+    }
+
+    public function test_recovery_screen_shows_real_state_and_http_verification_is_read_only(): void
+    {
+        [$instance,$release]=$this->fixture(); $before=$this->snapshot($instance->absolute_path);
+        $failed=InstanceUpdateRun::create(['instance_id'=>$instance->id,'release_id'=>$release->id,'from_version'=>'1.1.4','to_version'=>'1.1.5','status'=>'CODE_ROLLED_BACK_DB_ADVANCED','rollback_status'=>'CODE_ROLLBACK_VERIFIED','database_review_required'=>true,'error_message'=>'stage=DIRECTED_UPGRADE reason=UPGRADE_REPORTED_FAILURE','backup_manifest'=>$this->recoveryManifest(),'deployment_plan'=>['database_preflight'=>'READY'],'log'=>json_encode(['failure'=>['stage'=>'DIRECTED_UPGRADE'],'version_states'=>['after_rollback'=>['code_version'=>'1.1.4','database_version'=>'1.1.5']],'rollback'=>['restored'=>['app/Test.php'],'failed'=>[]]],JSON_THROW_ON_ERROR)]);
+        $admin=AdminUser::create(['name'=>'Admin','email'=>'recovery@example.test','password'=>'password-long-enough','active'=>true]);
+        $this->withoutVite()->actingAs($admin)->get(route('instances.update-runs.show',[$instance,$failed]))->assertOk()->assertSee('CODE_ROLLED_BACK_DB_ADVANCED')->assertSee('Versión de código')->assertSee('Versión registrada en BD')->assertSee('Verificar y desbloquear');
+        $runner=$this->runner(); $runner->shouldReceive('inspectVersion')->once()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.4'])); $this->app->instance(AllowedSparkRunner::class,$runner);
+        $this->actingAs($admin)->post(route('instances.update-runs.verify-recovery',[$instance,$failed]),['expected_state'=>'source','confirmation'=>$instance->slug])->assertRedirect(route('instances.update-runs.show',[$instance,$failed]));
+        $this->assertSame('RECOVERY_VERIFIED_SOURCE',$failed->fresh()->status);
+        $this->assertSame($before,$this->snapshot($instance->absolute_path));
+        $this->assertDatabaseHas('admin_audit_logs',['action'=>'INSTANCE_RELEASE_RECOVERY_VERIFIED','entity_id'=>$instance->id]);
     }
 
     public function test_exact_slug_confirmation_is_required(): void
@@ -179,7 +297,9 @@ class ReleaseCodeDeploymentTest extends TestCase
     private function preparedPlan(IkontrolInstance $instance, IkontrolRelease $release): array { return $this->deployment($this->runner())->prepare($instance,$release)->deployment_plan; }
     private function runner() { return Mockery::mock(AllowedSparkRunner::class); }
     private function deployment($runner): ReleaseDeploymentService { $versions=new InstanceVersionManagementService($runner,app(ManagedCommandJsonProtocol::class)); return new ReleaseDeploymentService(app(ReleaseArtifactService::class),app(DeploymentPlanService::class),app(StagedFileDeploymentService::class),app(ReleaseCompatibilityService::class),app(ReleasePromotionService::class),$runner,app(ManagedCommandJsonProtocol::class),$versions); }
-    private function process(array $payload): array { return ['exit_code'=>0,'stdout'=>"IKONTROL_JSON_BEGIN\n".json_encode($payload,JSON_THROW_ON_ERROR)."\nIKONTROL_JSON_END",'stderr'=>'']; }
-    private function successfulRunner($runner, IkontrolInstance $instance): void { $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('runUpgradePlan')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'READY','compatible'=>true])); $runner->shouldReceive('executeUpgrade')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'COMPLETED'])); $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:baseline-check')->andReturn($this->process(['status'=>'FAIL'])); }
+    private function process(array $payload): array { return ['execution_id'=>'TEST0001','command'=>['php','spark','test'],'exit_code'=>0,'stdout'=>"IKONTROL_JSON_BEGIN\n".json_encode($payload,JSON_THROW_ON_ERROR)."\nIKONTROL_JSON_END",'stderr'=>'','stdout_tail'=>json_encode($payload),'stderr_tail'=>'','timed_out'=>false,'timeout_seconds'=>300]; }
+    private function successfulRunner($runner, IkontrolInstance $instance): void { $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.4'])); $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('runUpgradePlan')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'READY','compatible'=>true])); $runner->shouldReceive('executeUpgrade')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'COMPLETED'])); $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.5'])); $runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.5','canonical_version'=>'1.1.5'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY'])); $runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:baseline-check')->andReturn($this->process(['status'=>'FAIL'])); }
+    private function failureRunner($runner,IkontrolInstance $instance,array $upgradeProcess,string $databaseAfter='1.1.5',?callable $afterUpgrade=null):void{$runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.4']));$runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>'1.1.4','canonical_version'=>'1.1.5']));$runner->shouldReceive('run')->once()->ordered()->with($instance->absolute_path,'ikontrol:database-check')->andReturn($this->process(['status'=>'READY']));$runner->shouldReceive('runUpgradePlan')->once()->ordered()->with($instance->absolute_path,'1.1.5')->andReturn($this->process(['status'=>'READY','compatible'=>true]));$expectation=$runner->shouldReceive('executeUpgrade')->once()->ordered()->with($instance->absolute_path,'1.1.5');if($afterUpgrade)$expectation->andReturnUsing(function()use($afterUpgrade,$upgradeProcess){$afterUpgrade();return $upgradeProcess;});else$expectation->andReturn($upgradeProcess);$runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>$databaseAfter,'canonical_version'=>'1.1.5']));$runner->shouldReceive('inspectVersion')->once()->ordered()->andReturn($this->process(['status'=>'READY','current_version'=>$databaseAfter,'canonical_version'=>'1.1.4']));}
+    private function recoveryManifest():array{return['source_version'=>'1.1.4','target_version'=>'1.1.5','replaced'=>[['path'=>'app/Test.php','sha256'=>hash('sha256','base'),'deployed_sha256'=>hash('sha256','target')]],'created'=>[['path'=>'new.php','deployed_sha256'=>hash('sha256','new')]],'installed'=>['app/Test.php','new.php']];}
     private function snapshot(string $path): array { $result=[]; foreach(File::allFiles($path) as$file)$result[str_replace('\\','/',$file->getRelativePathname())]=hash_file('sha256',$file->getPathname()); ksort($result); return $result; }
 }

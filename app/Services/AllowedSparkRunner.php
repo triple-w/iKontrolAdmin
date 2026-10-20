@@ -4,6 +4,7 @@ namespace App\Services;
 
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
 class AllowedSparkRunner
 {
@@ -79,17 +80,31 @@ class AllowedSparkRunner
         $binary = (string) config('ikontrol.deployment.php_binary', PHP_BINARY);
         if ($binary === '' || str_contains($binary, "\0") || str_contains($binary, "\n")) throw new RuntimeException('El binario PHP configurado no es válido.');
         $executionId = strtoupper(bin2hex(random_bytes(4))); $started = microtime(true);
-        $process = new Process(array_merge([$binary, 'spark', $command], $arguments), $cwd, ['CI_ENVIRONMENT' => 'production']);
+        $argv = array_merge([$binary, 'spark', $command], $arguments);
+        $timeout = (int) config('ikontrol.deployment.command_timeout', 300);
+        $process = new Process($argv, $cwd, ['CI_ENVIRONMENT' => 'production']);
         if ($input !== null) $process->setInput($input);
-        $process->setTimeout((int) config('ikontrol.deployment.command_timeout', 300)); $process->run();
+        $process->setTimeout($timeout);
+        $timedOut = false; $exception = null;
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException $e) {
+            $timedOut = true;
+            $exception = $e->getMessage();
+        }
         $stdout = $this->redact($process->getOutput(), $extraSecrets); $stderr = $this->redact($process->getErrorOutput(), $extraSecrets);
 
-        return ['execution_id'=>$executionId, 'exit_code'=>$process->getExitCode(), 'duration_ms'=>(int)((microtime(true)-$started)*1000), 'output'=>mb_substr(trim($stdout!==''?$stdout:$stderr),0,$limit), 'stdout'=>mb_substr(trim($stdout),0,$limit), 'stderr'=>mb_substr(trim($stderr),0,$limit), 'stdout_tail'=>mb_substr(trim($stdout),-$limit), 'stderr_tail'=>mb_substr(trim($stderr),-$limit), 'cwd'=>$cwd, 'php_binary'=>$binary];
+        return ['execution_id'=>$executionId, 'command'=>$this->redactCommand($argv, $extraSecrets), 'exit_code'=>$process->getExitCode(), 'duration_ms'=>(int)((microtime(true)-$started)*1000), 'timed_out'=>$timedOut, 'timeout_seconds'=>$timeout, 'exception'=>$exception ? $this->redact($exception, $extraSecrets) : null, 'output'=>mb_substr(trim($stdout!==''?$stdout:$stderr),0,$limit), 'stdout'=>mb_substr(trim($stdout),0,$limit), 'stderr'=>mb_substr(trim($stderr),0,$limit), 'stdout_tail'=>mb_substr(trim($stdout),-$limit), 'stderr_tail'=>mb_substr(trim($stderr),-$limit), 'cwd'=>$cwd, 'php_binary'=>$binary];
+    }
+
+    private function redactCommand(array $argv, array $extraSecrets): array
+    {
+        return array_map(fn ($argument) => $this->redact((string) $argument, $extraSecrets), $argv);
     }
 
     private function redact(string $value, array $extraSecrets = []): string
     {
         foreach (array_merge($extraSecrets, [(string) config('ikontrol.db.password'), (string) config('ikontrol.cpanel.token')]) as $secret) if ($secret !== '') $value = str_replace($secret, '[REDACTED]', $value);
-        return preg_replace(['/(password|token|secret|authorization)\s*[=:]\s*[^\s,;]+/i', '/bearer\s+[^\s]+/i'], ['$1=[REDACTED]', 'Bearer [REDACTED]'], $value) ?? '';
+        return preg_replace(['/(password|token|secret|authorization|app_key|encryption\.key|private_key|certificate|csd_password)\s*[=:]\s*[^\s,;]+/i', '/bearer\s+[^\s]+/i', '/-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----.*?-----END [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/is'], ['$1=[REDACTED]', 'Bearer [REDACTED]', '[REDACTED PEM]'], $value) ?? '';
     }
 }

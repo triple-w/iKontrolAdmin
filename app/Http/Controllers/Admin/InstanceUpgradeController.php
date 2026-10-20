@@ -47,6 +47,21 @@ class InstanceUpgradeController extends Controller
             return redirect()->route('instances.update-runs.show', [$instance, $updateRun])->with('error', 'El despliegue falló. Revise el estado de rollback antes de continuar.');
         }
     }
+
+    public function verifyDeploymentRecovery(IkontrolInstance $instance, InstanceUpdateRun $updateRun, Request $request, ReleaseDeploymentService $service, AuditService $audit)
+    {
+        $this->confirmation($request, $instance); $this->runBelongsTo($updateRun, $instance);
+        $data = $request->validate(['expected_state' => ['required', Rule::in(['source', 'target'])]]);
+        try {
+            $verified = $service->verifyRecovery($instance, $updateRun, $data['expected_state']);
+            $audit->record('INSTANCE_RELEASE_RECOVERY_VERIFIED', 'Recuperación de deployment verificada sin modificar código ni base de datos.', $instance, ['update_run_id' => $verified->id, 'status' => $verified->status, 'expected_state' => $data['expected_state']]);
+            return redirect()->route('instances.update-runs.show', [$instance, $verified])->with('success', 'La recuperación quedó verificada por versión y hashes.');
+        } catch (Throwable $e) {
+            report($e);
+            $audit->record('INSTANCE_RELEASE_RECOVERY_REJECTED', 'La recuperación no coincide con el estado declarado.', $instance, ['update_run_id' => $updateRun->id, 'expected_state' => $data['expected_state']]);
+            return back()->with('error', 'No se verificó la recuperación. El deployment continúa bloqueado.');
+        }
+    }
     public function inspect(IkontrolInstance $instance, InstanceVersionManagementService $service, AuditService $audit)
     {
         $result = $service->inspect($instance);

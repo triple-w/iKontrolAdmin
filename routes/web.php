@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/releases/{release}/prepare', [InstanceUpgradeController::class, 'prepareDeployment'])->middleware('throttle:3,1')->name('instances.releases.prepare');
     Route::get('/instances/{instance}/update-runs/{updateRun}', [InstanceUpgradeController::class, 'showDeployment'])->name('instances.update-runs.show');
     Route::post('/instances/{instance}/update-runs/{updateRun}/execute', [InstanceUpgradeController::class, 'executeDeployment'])->middleware('throttle:1,1')->name('instances.update-runs.execute');
+    Route::post('/instances/{instance}/update-runs/{updateRun}/verify-recovery', [InstanceUpgradeController::class, 'verifyDeploymentRecovery'])->middleware('throttle:2,1')->name('instances.update-runs.verify-recovery');
     Route::post('/instances/{instance}/adoption-plan', [InstanceUpgradeController::class, 'adoptionPlan'])->middleware('throttle:3,1')->name('instances.adoption.plan');
     Route::get('/instances/{instance}/upgrade-audits/{upgradeAudit}', [InstanceUpgradeController::class, 'show'])->name('instances.upgrade-audits.show');
     Route::post('/instances/{instance}/upgrade-audits/{upgradeAudit}/dry-run', [InstanceUpgradeController::class, 'dryRun'])->middleware('throttle:5,1')->name('instances.upgrade-audits.dry-run');
