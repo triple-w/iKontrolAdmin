@@ -158,8 +158,8 @@ class InstanceVersionManagementTest extends TestCase
         $legacy = $this->makeInstance('uilegacy', ['canonical_version' => '1.1.4', 'target_version' => '1.1.4', 'upgrade_status' => 'LEGACY_ADOPTABLE', 'installation_origin' => 'LEGACY']);
 
         $this->withoutVite()->actingAs($admin)->get(route('instances.index'))->assertOk()->assertSee('Versión detectada')->assertSee('UPDATE AVAILABLE')->assertSee('LEGACY');
-        $this->actingAs($admin)->get(route('instances.show', [$current, 'tab' => 'upgrade']))->assertOk()->assertSee('Instancia actualizada')->assertSee('Platform actualizada; configuración base incompleta.')->assertDontSee('Ver plan');
-        $this->actingAs($admin)->get(route('instances.show', [$update, 'tab' => 'upgrade']))->assertOk()->assertSee('Ver plan')->assertSee('El baseline no bloquea por sí solo el versionado.')->assertDontSee('Evaluar adopción');
+        $this->actingAs($admin)->get(route('instances.show', [$current, 'tab' => 'upgrade']))->assertOk()->assertSee('El versionador interno está al día')->assertSee('Baseline funcional: INCOMPLETE')->assertDontSee('Ver plan');
+        $this->actingAs($admin)->get(route('instances.show', [$update, 'tab' => 'upgrade']))->assertOk()->assertSee('Ver plan')->assertSee('Baseline funcional: FAIL')->assertDontSee('Evaluar adopción');
         $this->actingAs($admin)->get(route('instances.show', [$legacy, 'tab' => 'upgrade']))->assertOk()->assertSee('Evaluar adopción')->assertDontSee('Ver plan');
     }
 

@@ -40,14 +40,36 @@ class IkontrolVersionController extends Controller
 
     public function manifest(IkontrolRelease $release, GoldenInstanceResolver $golden, ReleasePromotionService $promotions)
     {
-        $release->load(['promotions.actor', 'promotions.updateRun.instance']);
-        try { $goldenInstance = $golden->resolve(); } catch (Throwable) { $goldenInstance = null; }
-        $goldenRuns = $goldenInstance
-            ? $release->updateRuns()->where('instance_id', $goldenInstance->id)->whereIn('status', ['completed', 'SUCCESS'])->where('release_commit_sha', $release->commit_sha)->where('release_artifact_sha256', $release->artifact_sha256)->latest('id')->get()
-            : collect();
-        $approvalCurrent = $promotions->hasCurrentApproval($release);
+        $promotionReadError = false;
+        try {
+            $release->load(['promotions.actor', 'promotions.updateRun.instance']);
+        } catch (Throwable $e) {
+            report($e);
+            $release->setRelation('promotions', collect());
+            $promotionReadError = true;
+        }
 
-        return view('admin.versions.manifest', compact('release', 'goldenInstance', 'goldenRuns', 'approvalCurrent'));
+        try { $goldenInstance = $golden->resolve(); } catch (Throwable) { $goldenInstance = null; }
+        $goldenRuns = collect();
+        $approvalCurrent = false;
+        if (! $promotionReadError && $goldenInstance) {
+            try {
+                $goldenRuns = $release->updateRuns()
+                    ->where('instance_id', $goldenInstance->id)
+                    ->whereIn('status', ['completed', 'SUCCESS'])
+                    ->where('release_commit_sha', $release->commit_sha)
+                    ->where('release_artifact_sha256', $release->artifact_sha256)
+                    ->latest('id')
+                    ->get();
+                $approvalCurrent = $promotions->hasCurrentApproval($release);
+            } catch (Throwable $e) {
+                report($e);
+                $goldenRuns = collect();
+                $promotionReadError = true;
+            }
+        }
+
+        return view('admin.versions.manifest', compact('release', 'goldenInstance', 'goldenRuns', 'approvalCurrent', 'promotionReadError'));
     }
 
     public function promoteToStaging(IkontrolRelease $release, Request $request, ReleasePromotionService $promotions, AuditService $audit)
