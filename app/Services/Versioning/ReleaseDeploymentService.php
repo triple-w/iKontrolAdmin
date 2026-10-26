@@ -4,6 +4,7 @@ namespace App\Services\Versioning;
 
 use App\Models\{IkontrolInstance, IkontrolRelease, InstanceUpdateRun};
 use App\Services\{AllowedSparkRunner, ManagedCommandJsonProtocol};
+use App\Services\Compatibility\CompatibilityDeploymentGate;
 use App\Services\Upgrade\InstanceVersionManagementService;
 use RuntimeException;
 use Throwable;
@@ -21,6 +22,7 @@ final class ReleaseDeploymentService
         private readonly AllowedSparkRunner $runner,
         private readonly ManagedCommandJsonProtocol $protocol,
         private readonly InstanceVersionManagementService $versions,
+        private readonly ?CompatibilityDeploymentGate $compatibilityGate = null,
     ) {}
 
     public function prepare(IkontrolInstance $instance, IkontrolRelease $release): InstanceUpdateRun
@@ -30,6 +32,7 @@ final class ReleaseDeploymentService
         $canonical = $this->versions->canonicalVersion();
         if ($release->version !== $canonical || $release->status !== 'validated') throw new RuntimeException('Sólo el release canónico validado puede prepararse.');
         if (! $this->compatibility->isCompatible($instance, $release)) throw new RuntimeException('El release no es compatible con la versión o canal de la instancia.');
+        ($this->compatibilityGate ?? app(CompatibilityDeploymentGate::class))->assertAllowed($instance, $release);
         $run = InstanceUpdateRun::create(['instance_id' => $instance->id, 'release_id' => $release->id, 'release_commit_sha' => strtolower($release->commit_sha), 'release_artifact_sha256' => strtolower((string) $release->artifact_sha256), 'from_version' => $instance->detected_version ?: $instance->current_version, 'to_version' => $release->version, 'status' => 'preflight', 'started_at' => now()]);
         try {
             $staged = $this->artifacts->stage($release, $run);
@@ -50,6 +53,7 @@ final class ReleaseDeploymentService
         $this->assertNoUnresolvedRun($instance, $run);
         $this->promotions->assertDeploymentAllowed($instance, $release);
         $this->promotions->assertRunMatchesRelease($run, $release);
+        ($this->compatibilityGate ?? app(CompatibilityDeploymentGate::class))->assertAllowed($instance, $release);
         if ($release->artifact_verification_status !== 'verified' || ! is_array($release->artifact_manifest_json)) throw new RuntimeException('La release carece de integridad local verificable.');
 
         $originalPlan = (array) $run->deployment_plan;

@@ -11,4 +11,6 @@ class IkontrolInstance extends Model {
  public function upgradeAudits():HasMany{return $this->hasMany(IkontrolUpgradeAudit::class,'ikontrol_instance_id')->latest('id');} public function latestUpgradeAudit():HasOne{return $this->hasOne(IkontrolUpgradeAudit::class,'ikontrol_instance_id')->latestOfMany();}
  public function updateRuns():HasMany{return $this->hasMany(InstanceUpdateRun::class,'instance_id')->latest('id');}
  public function latestUpdateRun():HasOne{return $this->hasOne(InstanceUpdateRun::class,'instance_id')->latestOfMany();}
+ public function compatibilityEvaluations():HasMany{return $this->hasMany(InstanceCompatibilityEvaluation::class,'instance_id')->latest('evaluated_at');}
+ public function latestCompatibilityEvaluation():HasOne{return $this->hasOne(InstanceCompatibilityEvaluation::class,'instance_id')->latestOfMany('evaluated_at');}
 }

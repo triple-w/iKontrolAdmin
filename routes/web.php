@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceController, InstanceDiagnosticsController, InstanceOperationController, InstanceUpgradeController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
+use App\Http\Controllers\Admin\{AuditLogController, ClientController, ConfigurationController, DashboardController, IkontrolVersionController, InstanceCompatibilityController, InstanceController, InstanceDiagnosticsController, InstanceOperationController, InstanceUpgradeController, LegacyFactucareController, FactucareConversionController, LoginController, ProvisioningController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -23,6 +23,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/version-inspection', [InstanceUpgradeController::class, 'inspect'])->middleware('throttle:5,1')->name('instances.version.inspect');
     Route::post('/instances/{instance}/upgrade-plan', [InstanceUpgradeController::class, 'plan'])->middleware('throttle:3,1')->name('instances.upgrade.plan');
     Route::post('/instances/{instance}/releases/{release}/prepare', [InstanceUpgradeController::class, 'prepareDeployment'])->middleware('throttle:3,1')->name('instances.releases.prepare');
+    Route::post('/instances/{instance}/compatibility-evaluations', [InstanceCompatibilityController::class, 'store'])->middleware('throttle:3,1')->name('instances.compatibility.store');
+    Route::get('/instances/{instance}/compatibility-evaluations/{evaluation}', [InstanceCompatibilityController::class, 'show'])->name('instances.compatibility.show');
     Route::get('/instances/{instance}/update-runs/{updateRun}', [InstanceUpgradeController::class, 'showDeployment'])->name('instances.update-runs.show');
     Route::post('/instances/{instance}/update-runs/{updateRun}/execute', [InstanceUpgradeController::class, 'executeDeployment'])->middleware('throttle:1,1')->name('instances.update-runs.execute');
     Route::post('/instances/{instance}/update-runs/{updateRun}/verify-recovery', [InstanceUpgradeController::class, 'verifyDeploymentRecovery'])->middleware('throttle:2,1')->name('instances.update-runs.verify-recovery');

@@ -35,6 +35,20 @@ return [
         'max_files' => (int) env('IKONTROL_RELEASE_MAX_FILES', 50000),
         'protected_paths' => ['.env', '.git', 'writable', 'files', 'uploads', 'storage/runtime', 'storage/logs', 'storage/framework', 'logs', 'cache', 'sessions', 'backups'],
     ],
+    'compatibility_inspector' => [
+        'timeout' => (int) env('IKONTROL_COMPATIBILITY_TIMEOUT', 120),
+        'readonly_username' => env('IKONTROL_COMPATIBILITY_DB_USERNAME'),
+        'readonly_password' => env('IKONTROL_COMPATIBILITY_DB_PASSWORD'),
+        'targets' => [
+            '1.1.6' => [
+                // Development-only until an immutable v1.1.6 release is published and staged.
+                'bundle_path' => env('IKONTROL_COMPATIBILITY_116_BUNDLE_PATH'),
+                'bundle_manifest_sha256' => env('IKONTROL_COMPATIBILITY_116_MANIFEST_SHA256'),
+                'source_version' => '1.1.5',
+                'source_commit' => '3c4a65d00d833743378ce526da7e5891da7509f9',
+            ],
+        ],
+    ],
     'templates' => [
         'root' => env('IKONTROL_TEMPLATE_ROOT', storage_path('ikontrol-templates')),
         'mysql_binary' => env('IKONTROL_MYSQL_BINARY', 'mysql'),
